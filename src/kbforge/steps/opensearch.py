@@ -20,7 +20,22 @@ from typing import Any, Dict, List, Optional, Tuple
 from botocore.exceptions import ClientError
 
 from ..aws import error_code, wait_for
-from .base import Action, Ctx, Inspection, Log, Step
+from .base import (
+    Action,
+    Ctx,
+    Inspection,
+    Log,
+    Step,
+    claimed_by,
+    is_ours,
+    shared_name_conflict,
+    tag_dict,
+    tags_if_allowed,
+)
+
+#: The description kbforge puts on the policies it creates. Policies can't be tagged, so this is
+#: how ``destroy`` recognises them.
+POLICY_DESCRIPTION = "kbforge"
 
 #: Field names Bedrock reads and writes inside the index. They must match ``fieldMapping``
 #: in the knowledge base's storage configuration.
@@ -60,18 +75,22 @@ class SecurityPoliciesStep(Step):
             "network": (ctx.names.net_policy, json.dumps(network)),
         }
 
-    def _missing(self, ctx: Ctx) -> List[str]:
-        """Which of the two policy types don't exist yet."""
+    def _existing(self, ctx: Ctx) -> Dict[str, Dict[str, Any]]:
+        """The policies that already exist, as policy type -> AWS's details for it."""
         aoss = ctx.aws.client("opensearchserverless")
-        missing = []
+        found = {}
         for policy_type, (name, _) in self._policies(ctx).items():
             try:
-                aoss.get_security_policy(name=name, type=policy_type)
+                found[policy_type] = aoss.get_security_policy(name=name, type=policy_type)["securityPolicyDetail"]
             except ClientError as exc:
                 if error_code(exc) != "ResourceNotFoundException":
                     raise
-                missing.append(policy_type)
-        return missing
+        return found
+
+    def _missing(self, ctx: Ctx) -> List[str]:
+        """Which of the two policy types don't exist yet."""
+        existing = self._existing(ctx)
+        return [policy_type for policy_type in self._policies(ctx) if policy_type not in existing]
 
     def inspect(self, ctx: Ctx) -> Inspection:
         """Create whichever of the two policies is missing."""
@@ -87,7 +106,7 @@ class SecurityPoliciesStep(Step):
         for policy_type in self._missing(ctx):
             name, document = policies[policy_type]
             log(f"Creating {policy_type} policy")
-            aoss.create_security_policy(name=name, type=policy_type, policy=document, description="kbforge")
+            aoss.create_security_policy(name=name, type=policy_type, policy=document, description=POLICY_DESCRIPTION)
         return "ready"
 
     def delete(self, ctx: Ctx, log: Log) -> str:
@@ -100,6 +119,12 @@ class SecurityPoliciesStep(Step):
                 if error_code(exc) != "ResourceNotFoundException":
                     raise
         return "deleted"
+
+    def owned(self, ctx: Ctx) -> Optional[bool]:
+        """Ours if kbforge's description is on every policy, and the collection (if still there) is ours too."""
+        if any(d.get("description") != POLICY_DESCRIPTION for d in self._existing(ctx).values()):
+            return False
+        return _collection_owned(ctx, default=True)
 
 
 class CollectionStep(Step):
@@ -135,6 +160,11 @@ class CollectionStep(Step):
         if collection is None:
             return Inspection(Action.CREATE)
         self._remember(ctx, collection)
+        aoss = ctx.aws.client("opensearchserverless")
+        tags = tags_if_allowed(lambda: tag_dict(aoss.list_tags_for_resource(resourceArn=collection["arn"])["tags"]))
+        owner = claimed_by(tags or {}, ctx)
+        if owner:
+            return shared_name_conflict(owner, ctx)
         if collection["status"] == "FAILED":
             reason = collection.get("failureMessage", "")
             return Inspection(Action.CONFLICT, warning=f"Collection is FAILED: {reason}")
@@ -166,6 +196,24 @@ class CollectionStep(Step):
         wait_for(lambda: self._get(ctx), lambda c: c is None, what="collection deletion", log=log, interval=10)
         return "deleted"
 
+    def owned(self, ctx: Ctx) -> Optional[bool]:
+        """True if the collection carries kbforge's tags for this knowledge base."""
+        arn = ctx.out.get("collection_arn")
+        if not arn:
+            return None
+        tags = ctx.aws.client("opensearchserverless").list_tags_for_resource(resourceArn=arn)["tags"]
+        return is_ours(tag_dict(tags), ctx)
+
+
+def _collection_owned(ctx: Ctx, default: Optional[bool]) -> Optional[bool]:
+    """The collection's ownership verdict, for policies that can't be tagged themselves.
+
+    ``default`` is used when the collection doesn't exist (any more), so there's nothing to ask.
+    """
+    if not ctx.out.get("collection_arn"):
+        return default
+    return CollectionStep().owned(ctx)
+
 
 class AccessPolicyStep(Step):
     """Grants Bedrock's role (to sync and query) and you (to create the index) access to the data."""
@@ -185,9 +233,11 @@ class AccessPolicyStep(Step):
         return ("Principals", "\n".join(self._principals(ctx)))
 
     def _principals(self, ctx: Ctx) -> List[str]:
+        """The principals this run needs: Bedrock's role and whoever is running kbforge."""
         return sorted({ctx.role_arn, ctx.aws.principal_arn})
 
-    def _policy(self, ctx: Ctx) -> str:
+    def _policy(self, ctx: Ctx, principals: List[str]) -> str:
+        """The policy document granting ``principals`` access to the collection and its indexes."""
         collection = ctx.names.collection
         rules = [
             {
@@ -213,7 +263,7 @@ class AccessPolicyStep(Step):
                 ],
             },
         ]
-        return json.dumps([{"Rules": rules, "Principal": self._principals(ctx)}])
+        return json.dumps([{"Rules": rules, "Principal": principals}])
 
     def inspect(self, ctx: Ctx) -> Inspection:
         """Check the policy exists and includes both principals."""
@@ -225,30 +275,57 @@ class AccessPolicyStep(Step):
             if error_code(exc) == "ResourceNotFoundException":
                 return Inspection(Action.CREATE)
             raise
-        ctx.out["access_policy_version"] = detail["policyVersion"]
-        current = {p for rule in detail.get("policy", []) for p in rule.get("Principal", [])}
+        document = detail.get("policy", [])
+        # boto3 normally decodes the document for us, but be tolerant of a raw JSON string.
+        if isinstance(document, str):
+            document = json.loads(document)
+        current = {p for rule in document for p in rule.get("Principal", [])}
+        ctx.out.update(
+            access_policy_version=detail["policyVersion"],
+            access_policy_principals=sorted(current),
+            access_policy_description=detail.get("description", ""),
+        )
         if set(self._principals(ctx)) <= current:
             return Inspection(Action.EXISTS)
         return Inspection(Action.UPDATE, "adding missing principals")
 
     def create(self, ctx: Ctx, log: Log, inspection: Inspection) -> str:
-        """Create the policy, or update it to add missing principals."""
+        """Create the policy, or update it to add missing principals.
+
+        An update keeps every principal already in the policy. Teammates who ran kbforge before
+        you were granted access the same way, and replacing the list would lock them out.
+        """
         aoss = ctx.aws.client("opensearchserverless")
         if inspection.action == Action.UPDATE:
+            principals = sorted(set(ctx.out.get("access_policy_principals", [])) | set(self._principals(ctx)))
             aoss.update_access_policy(
                 name=ctx.names.access_policy,
                 type="data",
                 policyVersion=ctx.out["access_policy_version"],
-                policy=self._policy(ctx),
+                policy=self._policy(ctx, principals),
             )
         else:
-            aoss.create_access_policy(name=ctx.names.access_policy, type="data", policy=self._policy(ctx))
+            aoss.create_access_policy(
+                name=ctx.names.access_policy,
+                type="data",
+                policy=self._policy(ctx, self._principals(ctx)),
+                description=POLICY_DESCRIPTION,
+            )
         return "ready"
 
     def delete(self, ctx: Ctx, log: Log) -> str:
         """Delete the data access policy."""
         ctx.aws.client("opensearchserverless").delete_access_policy(name=ctx.names.access_policy, type="data")
         return "deleted"
+
+    def owned(self, ctx: Ctx) -> Optional[bool]:
+        """Ours when its collection is; with no collection left, go by kbforge's description.
+
+        Older kbforge versions created this policy without a description, so a missing one
+        isn't proof either way (None).
+        """
+        marked = ctx.out.get("access_policy_description") == POLICY_DESCRIPTION
+        return _collection_owned(ctx, default=True if marked else None)
 
 
 class IndexStep(Step):
@@ -267,20 +344,7 @@ class IndexStep(Step):
 
     def _client(self, ctx: Ctx) -> Any:
         """An OpenSearch client that signs requests with your notebook's AWS credentials."""
-        try:
-            from opensearchpy import AWSV4SignerAuth, OpenSearch, RequestsHttpConnection
-        except ImportError as exc:
-            raise RuntimeError("OpenSearch Serverless needs: pip install 'kbforge[opensearch]'") from exc
-        host = ctx.out["collection_endpoint"].replace("https://", "")
-        auth = AWSV4SignerAuth(ctx.aws.session.get_credentials(), ctx.aws.region, "aoss")
-        return OpenSearch(
-            hosts=[{"host": host, "port": 443}],
-            http_auth=auth,
-            use_ssl=True,
-            verify_certs=True,
-            connection_class=RequestsHttpConnection,
-            timeout=300,
-        )
+        return ctx.aws.opensearch(ctx.out["collection_endpoint"])
 
     def _mapping(self, ctx: Ctx) -> Dict[str, Any]:
         return {
@@ -304,15 +368,30 @@ class IndexStep(Step):
         }
 
     def inspect(self, ctx: Ctx) -> Inspection:
-        """Check whether the index exists (if we can reach the collection yet)."""
+        """Check whether the index exists (if we can reach the collection yet) and has the right size."""
         if not ctx.out.get("collection_endpoint"):
             return Inspection(Action.CREATE)
+        name = ctx.names.aoss_index
         try:
-            exists = self._client(ctx).indices.exists(index=ctx.names.aoss_index)
+            client = self._client(ctx)
+            if not client.indices.exists(index=name):
+                return Inspection(Action.CREATE)
+            mapping = client.indices.get_mapping(index=name)
         except Exception:
             # Usually means the access policy doesn't include us yet. Apply will sort it out.
             return Inspection(Action.CREATE, "couldn't check yet — will create if missing")
-        return Inspection(Action.EXISTS if exists else Action.CREATE)
+        fields = mapping.get(name, {}).get("mappings", {}).get("properties", {})
+        dims = fields.get(VECTOR_FIELD, {}).get("dimension")
+        if dims != ctx.spec.dims:
+            found = f"{dims}-dimension vectors" if dims else f"no '{VECTOR_FIELD}' field"
+            return Inspection(
+                Action.CONFLICT,
+                warning=(
+                    f"Existing index has {found} but this spec needs {ctx.spec.dims}. "
+                    "Destroy the knowledge base first or pick another name."
+                ),
+            )
+        return Inspection(Action.EXISTS)
 
     def create(self, ctx: Ctx, log: Log, inspection: Inspection) -> str:
         """Create the index, retrying while the access policy takes effect."""

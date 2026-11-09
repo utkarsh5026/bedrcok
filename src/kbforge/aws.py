@@ -95,6 +95,28 @@ class Aws:
         self._principal_arn = arn
         return arn
 
+    def opensearch(self, endpoint: str) -> Any:
+        """An OpenSearch client for a Serverless collection, signing requests with these credentials.
+
+        boto3 can create a collection but not the vector index inside it; that takes the
+        OpenSearch API itself, hence the optional ``opensearch-py`` dependency.
+        """
+        try:
+            from opensearchpy import AWSV4SignerAuth, OpenSearch, RequestsHttpConnection
+        except ImportError as exc:
+            raise RuntimeError(
+                "OpenSearch Serverless needs: pip install 'kbforge[opensearch]', then restart the kernel."
+            ) from exc
+        auth = AWSV4SignerAuth(self.session.get_credentials(), self.region, "aoss")
+        return OpenSearch(
+            hosts=[{"host": endpoint.replace("https://", ""), "port": 443}],
+            http_auth=auth,
+            use_ssl=True,
+            verify_certs=True,
+            connection_class=RequestsHttpConnection,
+            timeout=300,
+        )
+
 
 def wait_for(
     poll: Callable[[], Any],

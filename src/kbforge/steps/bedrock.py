@@ -13,7 +13,7 @@ from typing import Any, Dict, Optional
 from botocore.exceptions import ClientError
 
 from ..aws import Aws, error_code, retry_on, wait_for
-from .base import Action, Ctx, Inspection, Log, Step, is_managed
+from .base import Action, Ctx, Inspection, Log, Step, is_ours
 from .opensearch import METADATA_FIELD, TEXT_FIELD, VECTOR_FIELD
 
 
@@ -56,6 +56,19 @@ class KnowledgeBaseStep(Step):
             }
         return config
 
+    def _dimensions(self, ctx: Ctx, vector_config: Dict[str, Any]) -> int:
+        """The vector size an existing KB was created with.
+
+        Bedrock only records it for models where you can choose; otherwise (or if it's left
+        out) the model's default size applies.
+        """
+        configured = (
+            vector_config.get("embeddingModelConfiguration", {})
+            .get("bedrockEmbeddingModelConfiguration", {})
+            .get("dimensions")
+        )
+        return configured or ctx.spec.model.default_dimensions
+
     def find(self, ctx: Ctx) -> Optional[Dict[str, Any]]:
         """Look up a knowledge base by name (Bedrock only lets you fetch by id, so we list)."""
         agent = ctx.aws.client("bedrock-agent")
@@ -76,12 +89,17 @@ class KnowledgeBaseStep(Step):
             reasons = "; ".join(kb.get("failureReasons", [])) or kb["status"]
             return Inspection(Action.CONFLICT, warning=f"Existing knowledge base is {kb['status']}: {reasons}")
 
-        # Embedding model and vector store are fixed once a KB exists, so a mismatch is a blocker.
+        # Embedding model, vector size and vector store are fixed once a KB exists, so a mismatch
+        # is a blocker.
         problems = []
         vector_config = kb.get("knowledgeBaseConfiguration", {}).get("vectorKnowledgeBaseConfiguration", {})
         current_model = vector_config.get("embeddingModelArn", "?")
         if current_model != ctx.spec.model.arn(ctx.aws.region):
             problems.append(f"it uses {current_model.split('/')[-1]}")
+        else:
+            current_dims = self._dimensions(ctx, vector_config)
+            if current_dims != ctx.spec.dims:
+                problems.append(f"it makes {current_dims}-dimension vectors, not {ctx.spec.dims}")
         current_store = kb.get("storageConfiguration", {}).get("type")
         if current_store != self._storage_type(ctx):
             problems.append(f"it stores vectors in {current_store}")
@@ -90,7 +108,8 @@ class KnowledgeBaseStep(Step):
                 Action.CONFLICT,
                 warning=(
                     f"A knowledge base named '{ctx.names.kb}' already exists but {' and '.join(problems)}. "
-                    "Embedding model and vector store can't change in place — pick a new name or destroy it first."
+                    "Embedding model, vector size and vector store can't change in place — pick a new name "
+                    "or destroy it first."
                 ),
             )
         return Inspection(Action.EXISTS, kb["knowledgeBaseId"])
@@ -150,9 +169,9 @@ class KnowledgeBaseStep(Step):
         return "deleted"
 
     def owned(self, ctx: Ctx) -> Optional[bool]:
-        """True if the KB carries the kbforge tag."""
+        """True if the KB carries kbforge's tags for this knowledge base."""
         tags = ctx.aws.client("bedrock-agent").list_tags_for_resource(resourceArn=ctx.out["kb_arn"]).get("tags", {})
-        return is_managed(tags)
+        return is_ours(tags, ctx)
 
 
 class DataSourceStep(Step):
@@ -234,6 +253,10 @@ class DataSourceStep(Step):
             log=log,
         )
         return "deleted"
+
+    def owned(self, ctx: Ctx) -> Optional[bool]:
+        """A data source can't be tagged, so it counts as ours when its knowledge base is."""
+        return KnowledgeBaseStep().owned(ctx)
 
 
 class SyncStep(Step):

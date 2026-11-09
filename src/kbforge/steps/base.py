@@ -17,7 +17,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from botocore.exceptions import ClientError
 
 from ..aws import Aws, error_code, error_message
 from ..spec import KBSpec, Names
@@ -27,6 +29,14 @@ Log = Callable[[str], None]
 
 #: Every resource kbforge creates carries this tag, so ``destroy`` can tell ours from yours.
 MANAGED_TAG = ("managed-by", "kbforge")
+
+#: Tag naming the knowledge base a resource was made for. Resource names come from a lowercase
+#: form of the KB name, so ``HR_Policies`` and ``hr-policies`` map to the same bucket, role and
+#: collection. This tag is how a step tells "ours" apart from "another knowledge base's".
+KB_TAG = "kbforge-kb"
+
+#: Error codes that mean "you're not allowed to look", as opposed to "it isn't there".
+ACCESS_DENIED = ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation")
 
 
 class Action(str, Enum):
@@ -62,6 +72,9 @@ class Inspection:
     action: Action
     note: str = ""
     warning: str = ""
+    #: True when the step couldn't look at AWS at all (throttling, a missing permission), so
+    #: the action is only a placeholder. Destroy refuses to go ahead on a guess.
+    error: bool = False
 
 
 @dataclass
@@ -85,7 +98,7 @@ class Ctx:
     @property
     def tags(self) -> Dict[str, str]:
         """Tags put on everything we create: the kbforge marker plus the user's own tags."""
-        return {MANAGED_TAG[0]: MANAGED_TAG[1], "kbforge-kb": self.spec.name, **self.spec.tags}
+        return {MANAGED_TAG[0]: MANAGED_TAG[1], KB_TAG: self.spec.name, **self.spec.tags}
 
     @property
     def role_arn(self) -> str:
@@ -104,8 +117,59 @@ class Ctx:
 
 
 def is_managed(tags: Dict[str, str]) -> bool:
-    """True if a resource's tags show kbforge created it."""
+    """True if a resource's tags show kbforge created it (for any knowledge base)."""
     return tags.get(MANAGED_TAG[0]) == MANAGED_TAG[1]
+
+
+def tag_dict(tags: List[Dict[str, str]]) -> Dict[str, str]:
+    """Turn AWS's list-of-pairs tag format into a plain dict.
+
+    IAM uses ``{"Key", "Value"}`` and OpenSearch Serverless ``{"key", "value"}``; both work.
+    """
+    return {t.get("Key", t.get("key", "")): t.get("Value", t.get("value", "")) for t in tags}
+
+
+def claimed_by(tags: Dict[str, str], ctx: Ctx) -> Optional[str]:
+    """The name of a *different* knowledge base this resource was made for, or None.
+
+    None means the resource is free for this knowledge base to use: it was made for this one,
+    or kbforge didn't make it (that case is handled by ``owned`` when destroying).
+    """
+    owner = tags.get(KB_TAG)
+    if is_managed(tags) and owner and owner != ctx.spec.name:
+        return owner
+    return None
+
+
+def is_ours(tags: Dict[str, str], ctx: Ctx) -> bool:
+    """True if kbforge created this resource *for this knowledge base*, so destroy may remove it."""
+    return is_managed(tags) and claimed_by(tags, ctx) is None
+
+
+def shared_name_conflict(owner: str, ctx: Ctx) -> Inspection:
+    """The blocker shown when a resource kbforge would use already belongs to another knowledge base."""
+    return Inspection(
+        Action.CONFLICT,
+        warning=(
+            f"This already belongs to knowledge base '{owner}'. kbforge names resources from a lowercase "
+            f"form of the KB name, so '{ctx.spec.name}' and '{owner}' would share it. Pick a name that "
+            "differs by more than upper/lower case or '-' versus '_'."
+        ),
+    )
+
+
+def tags_if_allowed(fetch: Callable[[], Dict[str, str]]) -> Optional[Dict[str, str]]:
+    """Read a resource's tags, or return None if we aren't allowed to.
+
+    Used by ``inspect`` to spot a resource that belongs to another knowledge base. Lacking
+    permission to read tags shouldn't stop a plan, so the check is skipped instead.
+    """
+    try:
+        return fetch()
+    except ClientError as exc:
+        if error_code(exc) in ACCESS_DENIED:
+            return None
+        raise
 
 
 class Step:
@@ -146,14 +210,19 @@ class Step:
         raise NotImplementedError
 
     def owned(self, ctx: Ctx) -> Optional[bool]:
-        """Did kbforge create this? True/False from tags, or None if the resource can't be tagged."""
+        """Did kbforge create this for this knowledge base?
+
+        True/False from tags (or from a parent resource's tags, for things that can't be
+        tagged), or None when there is nothing to go on. Raising means "couldn't tell", and
+        destroy then leaves the resource alone.
+        """
         return None
 
 
 def explain_error(exc: BaseException) -> str:
     """Turn the most common AWS failures into a message a notebook user can act on."""
     code, msg = error_code(exc), error_message(exc)
-    if code in ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation"):
+    if code in ACCESS_DENIED:
         return (
             f"{msg}\n\nYour notebook's role is missing a permission. Ask your AWS admin to grant the "
             "action named above, or pass role_arn=... to reuse an existing Bedrock role."

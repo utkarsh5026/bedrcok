@@ -257,6 +257,118 @@ class FakeBedrockAgent:
         return {"ingestionJobSummaries": list(reversed(mine))[:1]}
 
 
+class FakeOpenSearchServerless:
+    """OpenSearch Serverless's control plane: security/access policies, collections and their tags.
+
+    Like the real service, a collection can only be created once an encryption policy covers it,
+    and an access policy update must quote the current ``policyVersion``.
+    """
+
+    def __init__(self) -> None:
+        self.security_policies: Dict[tuple, Dict[str, Any]] = {}
+        self.access_policies: Dict[str, Dict[str, Any]] = {}
+        self.collections: Dict[str, Dict[str, Any]] = {}
+        #: The vector indexes inside each collection, keyed by endpoint (see ``FakeOpenSearch``).
+        self.indexes: Dict[str, Dict[str, Dict[str, Any]]] = {}
+
+    def get_security_policy(self, name: str, type: str) -> Dict[str, Any]:
+        if (type, name) not in self.security_policies:
+            raise aws_error("ResourceNotFoundException")
+        return {"securityPolicyDetail": self.security_policies[(type, name)]}
+
+    def create_security_policy(self, name: str, type: str, policy: str, description: str = "") -> Dict[str, Any]:
+        if (type, name) in self.security_policies:
+            raise aws_error("ConflictException", "policy already exists")
+        detail = {"name": name, "type": type, "policy": json.loads(policy), "description": description}
+        self.security_policies[(type, name)] = detail
+        return {"securityPolicyDetail": detail}
+
+    def delete_security_policy(self, name: str, type: str) -> None:
+        if (type, name) not in self.security_policies:
+            raise aws_error("ResourceNotFoundException")
+        del self.security_policies[(type, name)]
+
+    def _encrypted(self, collection: str) -> bool:
+        for (kind, _), detail in self.security_policies.items():
+            rules = detail["policy"]["Rules"] if kind == "encryption" else []
+            if any(f"collection/{collection}" in rule["Resource"] for rule in rules):
+                return True
+        return False
+
+    def batch_get_collection(self, names: List[str]) -> Dict[str, Any]:
+        return {"collectionDetails": [self.collections[n] for n in names if n in self.collections]}
+
+    def create_collection(self, name: str, type: str, description: str = "", tags: Optional[list] = None) -> Any:
+        if not self._encrypted(name):
+            raise aws_error("ValidationException", f"No matching security policy of encryption type found for {name}")
+        cid = new_id().lower()
+        endpoint = f"https://{cid}.{REGION}.aoss.amazonaws.com"
+        self.collections[name] = {
+            "id": cid,
+            "name": name,
+            "arn": f"arn:aws:aoss:{REGION}:{ACCOUNT}:collection/{cid}",
+            "status": "ACTIVE",
+            "collectionEndpoint": endpoint,
+            "tags": list(tags or []),
+        }
+        self.indexes[endpoint] = {}
+        return {"createCollectionDetail": {"id": cid, "name": name, "status": "CREATING"}}
+
+    def list_tags_for_resource(self, resourceArn: str) -> Dict[str, Any]:
+        for collection in self.collections.values():
+            if collection["arn"] == resourceArn:
+                return {"tags": collection["tags"]}
+        raise aws_error("ResourceNotFoundException")
+
+    def delete_collection(self, id: str) -> None:
+        name = next(n for n, c in self.collections.items() if c["id"] == id)
+        self.indexes.pop(self.collections.pop(name)["collectionEndpoint"], None)
+
+    def get_access_policy(self, name: str, type: str) -> Dict[str, Any]:
+        if name not in self.access_policies:
+            raise aws_error("ResourceNotFoundException")
+        return {"accessPolicyDetail": self.access_policies[name]}
+
+    def create_access_policy(self, name: str, type: str, policy: str, description: str = "") -> Dict[str, Any]:
+        if name in self.access_policies:
+            raise aws_error("ConflictException", "policy already exists")
+        detail = {"name": name, "type": type, "policy": json.loads(policy), "policyVersion": new_id()}
+        if description:
+            detail["description"] = description
+        self.access_policies[name] = detail
+        return {"accessPolicyDetail": detail}
+
+    def update_access_policy(self, name: str, type: str, policyVersion: str, policy: str, **_: Any) -> Any:
+        detail = self.access_policies[name]
+        if detail["policyVersion"] != policyVersion:
+            raise aws_error("ConflictException", "policy version is out of date")
+        detail.update(policy=json.loads(policy), policyVersion=new_id())
+        return {"accessPolicyDetail": detail}
+
+    def delete_access_policy(self, name: str, type: str) -> None:
+        if name not in self.access_policies:
+            raise aws_error("ResourceNotFoundException")
+        del self.access_policies[name]
+
+
+class FakeOpenSearch:
+    """The data-plane client ``Aws.opensearch(endpoint)`` returns: just the index calls kbforge makes."""
+
+    def __init__(self, indexes: Dict[str, Dict[str, Any]]):
+        self.indices = self
+        self._indexes = indexes
+
+    def exists(self, index: str) -> bool:
+        return index in self._indexes
+
+    def create(self, index: str, body: Dict[str, Any]) -> Dict[str, Any]:
+        self._indexes[index] = body
+        return {"acknowledged": True, "index": index}
+
+    def get_mapping(self, index: str) -> Dict[str, Any]:
+        return {index: {"mappings": self._indexes[index]["mappings"]}}
+
+
 class FakeAgentRuntime:
     def retrieve(self, knowledgeBaseId: str, retrievalQuery: Dict[str, str], **_: Any) -> Dict[str, Any]:
         return {
@@ -284,7 +396,10 @@ class FakeAws:
             "s3vectors": FakeS3Vectors(),
             "bedrock-agent": FakeBedrockAgent(),
             "bedrock-agent-runtime": FakeAgentRuntime(),
+            "opensearchserverless": FakeOpenSearchServerless(),
         }
+        #: Who is "running the notebook". Tests change it to play a second teammate.
+        self.principal = f"arn:aws:iam::{ACCOUNT}:role/SageMakerRole"
         self.services["s3"].buckets["my-company-docs"] = {
             "hr/leave.pdf": 120_000,
             "hr/handbook.docx": 340_000,
@@ -309,4 +424,7 @@ class FakeAws:
 
     @property
     def principal_arn(self) -> str:
-        return f"arn:aws:iam::{ACCOUNT}:role/SageMakerRole"
+        return self.principal
+
+    def opensearch(self, endpoint: str) -> FakeOpenSearch:
+        return FakeOpenSearch(self.services["opensearchserverless"].indexes[endpoint])
