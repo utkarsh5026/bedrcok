@@ -20,19 +20,27 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+# Everything kbforge can do is installed by a plain `pip install kbforge`, so colleagues
+# never hit a "missing package" error halfway through a build.
 dependencies = [
     # S3 Vectors + S3_VECTORS storage type for Bedrock KBs need a recent botocore.
     "boto3>=1.40.0",
     "pyyaml>=6.0",
+    # Notebook output and the interactive form (kbforge.wizard()).
+    "ipython>=7.0",
+    "ipywidgets>=8.0",
+    # Creates the vector index when vector_store="opensearch_serverless".
+    # 2.4.0 itself fails to import without aiohttp, so 2.4.1 is the real minimum.
+    "opensearch-py>=2.4.1",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]
-# Interactive form (kbforge.wizard()). SageMaker images usually ship this already.
-notebook = ["ipython>=7.0", "ipywidgets>=8.0"]
-# Only needed when vector_store="opensearch_serverless" (to create the vector index).
-# 2.4.0 itself fails to import without aiohttp, so 2.4.1 is the real minimum.
-opensearch = ["opensearch-py>=2.4.1", "requests>=2.31"]
-all = ["kbforge[notebook,opensearch]"]
+# Kept empty so older install commands such as `pip install "kbforge[notebook]"` still work;
+# these packages are now part of the core dependencies above.
+notebook = []
+opensearch = []
+all = []
 
 [project.scripts]
 kbforge = "kbforge.cli:main"
@@ -43,10 +51,6 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.10",
     "types-PyYAML",
-    "ipython>=7.0",
-    "ipywidgets>=8.0",
-    "opensearch-py>=2.4.1",
-    "requests>=2.31",
     "rich>=13.0",
 ]
 # Regenerating the GitHub Pages screenshots: uv run --group docs python scripts/docs_screenshots.py

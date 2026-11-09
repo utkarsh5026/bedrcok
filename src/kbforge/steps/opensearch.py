@@ -8,7 +8,7 @@ It needs more moving parts than S3 Vectors:
 * a vector index with the exact field names Bedrock expects.
 
 The index has to be created through the OpenSearch API rather than boto3, which is why
-this store needs the optional ``opensearch-py`` dependency.
+this store uses the ``opensearch-py`` dependency (installed with kbforge).
 """
 
 from __future__ import annotations
