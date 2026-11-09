@@ -11,12 +11,13 @@ import textwrap
 from typing import TYPE_CHECKING, List
 
 from ..checks import FAIL, OK, WARN
-from ..spec import VECTOR_STORES
+from ..spec import VECTOR_STORES, KBSpec
 from ..steps import Action, describe_stats
 from .html import source_location
 
 if TYPE_CHECKING:
     from ..knowledge_base import Answers, Status
+    from ..parsers import ParsingModels
     from ..plan import ApplyResult, Plan
 
 _COLOURS = {"green": "32", "amber": "33", "red": "31", "blue": "34", "grey": "90", "bold": "1"}
@@ -58,6 +59,11 @@ def _wrap(text: str, indent: int) -> str:
     )
 
 
+def _parsing_step(spec: KBSpec) -> str:
+    """The parser in the plan's one-line data flow, or nothing for the default parser."""
+    return "" if spec.parsing.strategy == "default" else f"{spec.parsing.describe()} → "
+
+
 def render_plan(plan: Plan) -> str:
     """The plan as text: header, checks, then one line per step."""
     spec = plan.spec
@@ -65,7 +71,7 @@ def render_plan(plan: Plan) -> str:
         "",
         paint(f"{'Destroy plan' if plan.mode == 'destroy' else 'Plan'} for knowledge base '{spec.name}'", "bold"),
         paint(f"  {plan.aws.region} · {VECTOR_STORES[spec.vector_store]} · {spec.model.label} ({spec.dims}d)", "grey"),
-        paint(f"  {spec.source.describe()} → {spec.chunking.describe()}", "grey"),
+        paint(f"  {spec.source.describe()} → {_parsing_step(spec)}{spec.chunking.describe()}", "grey"),
         "",
     ]
     if plan.checks:
@@ -132,4 +138,27 @@ def render_status(status: Status) -> str:
     width = max(len(k) for k, _ in status.rows())
     lines = [paint(f"\n{status.name}", "bold")]
     lines += [f"  {k.ljust(width)}  {v}" for k, v in status.rows() if v]
+    return "\n".join(lines)
+
+
+def render_parsing_models(models: ParsingModels) -> str:
+    """The models that can parse documents, as a table with the value to pass as ``parsing=``."""
+    where = f"in {models.region}" if models.region else ""
+    lines = [paint(f"\nModels that can parse documents {where}".rstrip(), "bold")]
+    if models.error:
+        lines.append(paint(_wrap(models.error, 2), "amber"))
+    if not models.options:
+        lines.append("  None here. Try another region, or use parsing: data_automation.")
+        return "\n".join(lines)
+    width = max(len(o.value) for o in models) + 2
+    label_width = max(len(o.label) for o in models) + 2
+    lines.append(paint(f"  {'parsing:'.ljust(width)}{'model'.ljust(label_width)}called via", "grey"))
+    for o in models:
+        mark = paint(" (recommended)", "green") if o.recommended else ""
+        lines.append(f"  {o.value.ljust(width)}{o.label.ljust(label_width)}{o.route}{mark}")
+        if o.note:
+            lines.append(paint(f"  {' ' * width}{o.note}", "grey"))
+    lines.append("")
+    lines.append(paint("Use one in kb.yaml:", "grey"))
+    lines.append(f"  parsing:\n    strategy: foundation_model\n    model: {models.values[0]}")
     return "\n".join(lines)

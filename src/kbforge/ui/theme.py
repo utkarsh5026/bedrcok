@@ -102,6 +102,12 @@ body[data-jp-theme-light="false"] .kbf, body.vscode-dark .kbf, body.vscode-high-
 .kbf .score i { display: block; height: 100%; background: var(--kbf-blue); }
 .kbf .snippet { margin-top: 4px; white-space: pre-wrap; }
 .kbf a { color: var(--kbf-blue); }
+.kbf .tbl { width: 100%; overflow-x: auto; }
+.kbf .tbl table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.kbf .tbl th { text-align: left; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--kbf-muted);
+  font-weight: 600; padding: 0 12px 6px 0; border-bottom: 1px solid var(--kbf-border); }
+.kbf .tbl td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--kbf-border); vertical-align: top; }
+.kbf .tbl tr:last-child td { border-bottom: 0; }
 @media (max-width: 640px) { .kbf .arrow { display: none; } .kbf .stage { flex-basis: 100%; margin-bottom: 6px; } }
 </style>
 """

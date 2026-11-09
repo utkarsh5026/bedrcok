@@ -10,17 +10,20 @@ committed config file.
 While you fill it in, the form checks each answer as you type and a side panel shows the
 knowledge base taking shape (data flow and the AWS names it will use). Choices with
 trade-offs, like the vector store, are shown as cards with a sentence on when to pick each,
-because the people using this usually aren't AWS experts.
+because the people using this usually aren't AWS experts. When a model is to parse the
+documents, the form can ask Bedrock which models the account can actually use.
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 
+from .aws import Aws
 from .knowledge_base import KnowledgeBase
-from .models import EMBEDDING_MODELS, EmbeddingModel
+from .models import DEFAULT_PARSING_MODEL, EMBEDDING_MODELS, EmbeddingModel
+from .parsers import ParsingModels, known_parsing_models, list_parsing_models
 from .plan import ApplyResult, Plan
-from .spec import KB_NAME_RE, VECTOR_STORES, KBSpec, S3Source, WebSource, coerce_chunking
+from .spec import KB_NAME_RE, VECTOR_STORES, KBSpec, S3Source, WebSource, coerce_chunking, coerce_parsing
 from .steps import Action
 from .ui import wizard_style as ui
 from .ui.progress import progress_target
@@ -68,6 +71,31 @@ CHUNKING_CHOICES = [
         ("", ""),
     ),
     ("none", "No chunking", "Each file is one piece. Only for files that are already small.", "file", ("", "")),
+]
+
+#: Parsing cards: (value, title, explanation, icon, tag).
+PARSING_CHOICES = [
+    (
+        "default",
+        "Default parser",
+        "Pulls the plain text out of each file. Free and fast; images, charts and scanned pages are skipped.",
+        "file",
+        ("Recommended", "c-green"),
+    ),
+    (
+        "foundation_model",
+        "A model reads each page",
+        "A vision model turns tables, charts, images and scans in PDFs into text. Every page is a model call.",
+        "sparkle",
+        ("", ""),
+    ),
+    (
+        "data_automation",
+        "Bedrock Data Automation",
+        "A managed service extracts text, tables and figures, with no model to choose. Billed per page.",
+        "shield",
+        ("", ""),
+    ),
 ]
 
 #: Embedding models that get a tag on their card.
@@ -159,6 +187,32 @@ class Wizard:
         self.dimensions: Any = None
         self.dims_box = w.VBox(layout=w.Layout(width="100%"))
 
+        self.parsing = OptionCards(
+            [Choice(v, t, b, i, tag) for v, t, b, i, tag in PARSING_CHOICES], value="default", columns=3
+        )
+        self.parser: Any = None
+        self.parser_cards = w.VBox(layout=w.Layout(width="100%"))
+        self.parser_list_btn = self._button("Show the models my account can use", "search", "ghost")
+        self.parser_hint = w.HTML()
+        self.parser_prompt = w.Textarea(
+            placeholder="Optional: your own instructions for the model, e.g. "
+            "“Transcribe every table as Markdown and describe each chart in one sentence.”"
+        )
+        self.parser_prompt.add_class("kbf-input")
+        self.parser_prompt.layout = w.Layout(width="100%")
+        self.parser_box = w.VBox(
+            [
+                w.HTML(ui.label("Parsing model")),
+                self.parser_cards,
+                self.parser_list_btn,
+                self.parser_hint,
+                w.HTML(ui.label("Instructions for the model")),
+                self.parser_prompt,
+            ],
+            layout=w.Layout(width="100%", display="none"),
+        )
+        self._show_parsers(known_parsing_models(self.region_label))
+
         self.vector_store = OptionCards(
             [Choice(v, t, b, i, tag) for v, t, b, i, tag in VECTOR_STORE_CHOICES], value="s3_vectors"
         )
@@ -208,9 +262,11 @@ class Wizard:
 
         for widget in (self.name, self.s3_uri, self.urls, self.region, self.role_arn, self.description):
             widget.observe(self._on_change, names="value")
-        for widget in (self.source_kind, self.vector_store, self.chunking, self.sync):
+        for widget in (self.source_kind, self.vector_store, self.chunking, self.sync, self.parser_prompt):
             widget.observe(self._on_change, names="value")
         self.source_kind.observe(self._on_source_kind, names="value")
+        self.parsing.observe(self._on_parsing, names="value")
+        self.parser_list_btn.on_click(self._on_list_parsers)
         self.embedding.observe(self._on_embedding, names="value")
         self.adv_btn.on_click(self._on_advanced)
         self.edit_btn.on_click(lambda _: self._fold(False))
@@ -278,6 +334,14 @@ class Wizard:
                 ),
                 self._section(
                     3,
+                    "How to read them",
+                    "The default parser handles text documents. If your PDFs hold important tables, charts or "
+                    "scanned pages, let a model read them. Changing this later means rebuilding.",
+                    self.parsing,
+                    self.parser_box,
+                ),
+                self._section(
+                    4,
                     "Embedding model",
                     "Turns each piece of text into numbers so similar meanings sit close together. "
                     "Can't be changed later.",
@@ -285,13 +349,13 @@ class Wizard:
                     self.dims_box,
                 ),
                 self._section(
-                    4,
+                    5,
                     "Vector store",
                     "Where those numbers are kept and searched. Can't be changed later.",
                     self.vector_store,
                 ),
                 self._section(
-                    5,
+                    6,
                     "Chunking",
                     "How documents are cut into pieces before embedding. Smaller pieces give more precise matches.",
                     self.chunking,
@@ -322,6 +386,70 @@ class Wizard:
         self.s3_uri.layout.display = None if is_s3 else "none"
         self.urls.layout.display = "none" if is_s3 else None
         self.source_label.value = ui.label("S3 location" if is_s3 else "Seed URLs — one per line")
+
+    def _on_parsing(self, change: Dict[str, Any]) -> None:
+        """Show the model choice and instructions only when a model will do the parsing."""
+        self.parser_box.layout.display = None if change["new"] == "foundation_model" else "none"
+        self._on_change(None)
+
+    def _show_parsers(self, models: ParsingModels) -> None:
+        """Offer ``models`` as cards, keeping the current pick when it's still on the list."""
+        current = self.parser.value if self.parser is not None else DEFAULT_PARSING_MODEL
+        if not models.options:
+            self.parser = None
+            self.parser_cards.children = []
+        else:
+            self.parser = self.OptionCards(
+                [
+                    self.Choice(
+                        o.value,
+                        o.label,
+                        o.note or f"{o.provider} model.",
+                        "sparkle",
+                        ("Recommended", "c-green") if o.recommended else ("", ""),
+                        f"{o.value} · {o.route}",
+                    )
+                    for o in models
+                ],
+                value=current if current in models.values else models.values[0],
+            )
+            self.parser.observe(self._on_change, names="value")
+            self.parser_cards.children = [self.parser]
+        if models.error:
+            self.parser_hint.value = ui.field_hint(esc(models.error), "bad")
+        elif models.live:
+            where = f" in {esc(models.region)}" if models.region else ""
+            self.parser_hint.value = ui.field_hint(
+                f"{len(models)} model(s) your account can use{where}. <b>Review plan</b> checks you can call the "
+                "one you pick.",
+                "ok",
+            )
+        else:
+            self.parser_hint.value = ui.field_hint(
+                "The parsers kbforge knows. Click the button to see exactly what your account offers."
+            )
+
+    def _on_list_parsers(self, _: Any) -> None:
+        """Ask Bedrock which parsing models this account and region offer, and show them as cards."""
+        self.parser_hint.value = ui.field_hint("Asking Bedrock which models you can use…")
+        region = self.region.value.strip() or self.region_label or None
+        try:
+            models = list_parsing_models(Aws(region=region, session=self.session))
+        except Exception as exc:
+            models = known_parsing_models(region or "", f"Couldn't connect to AWS ({exc}).")
+        self._show_parsers(models)
+        self._on_change(None)
+
+    def _parsing_option(self) -> Any:
+        """The parsing choice as a ``parsing=`` value, or None for the default parser."""
+        if self.parsing.value == "data_automation":
+            return "data_automation"
+        if self.parsing.value != "foundation_model" or self.parser is None:
+            return None
+        prompt = self.parser_prompt.value.strip()
+        if not prompt:
+            return self.parser.value
+        return {"strategy": "foundation_model", "model": self.parser.value, "prompt": prompt}
 
     def _on_embedding(self, change: Dict[str, Any]) -> None:
         """Offer the new model's vector sizes (as small cards) when it has more than one."""
@@ -371,6 +499,9 @@ class Wizard:
             options["vector_store"] = self.vector_store.value
         if self.chunking.value != "fixed":
             options["chunking"] = self.chunking.value
+        parsing = self._parsing_option()
+        if parsing is not None:
+            options["parsing"] = parsing
         for key in ("region", "role_arn", "description"):
             value = getattr(self, key).value.strip()
             if value:
@@ -515,8 +646,13 @@ class Wizard:
             source_icon = "globe"
         store = self.vector_store.value
         region = self.region.value.strip() or self.region_label
+        try:
+            parse_title, _, parse_detail = coerce_parsing(self._parsing_option()).describe().partition(" · ")
+        except ValueError:  # e.g. instructions that are too long; the form shows the error
+            parse_title, parse_detail = PARSING_CHOICES[1][1], ""
         return [
             ("Source", source, source_sub, source_icon),
+            ("Parsing", parse_title, parse_detail, "file"),
             ("Chunking", chunk_title, chunk_detail, "scissors"),
             ("Embeddings", model.label, f"{dims} dimensions", "sparkle"),
             ("Vector store", VECTOR_STORES[store], "serverless" if store == "s3_vectors" else "collection", "database"),

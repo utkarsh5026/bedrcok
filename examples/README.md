@@ -83,9 +83,10 @@ Pick **one** strategy and give only its settings. Any setting you leave out keep
 | `embedding` | | `"titan-v2"` | `"titan-v2"`, `"cohere-en"`, `"cohere-multi"`, `"titan-v1"`, or a raw model id together with `dimensions` |
 | `dimensions` | | model default | titan-v2 only: `256`, `512` or `1024` |
 | `vector_store` | | `"s3_vectors"` | `"s3_vectors"` or `"opensearch_serverless"` |
+| `parsing` | | `{"strategy": "default"}` | `{"strategy": "foundation_model", "model": "nova-lite", "prompt": "…"}` (`prompt` optional), `{"strategy": "data_automation"}`, or just a model name such as `"nova-lite"`. `kbforge parsers` lists the models your account can use |
 | `role_arn` | | kbforge creates a role | An existing role that trusts `bedrock.amazonaws.com` |
 | `permissions_boundary` | | none | Policy ARN to attach to the role kbforge creates |
 | `sync` | | `true` | `false` to build now and run the first ingestion later |
 | `tags` | | `{}` | Extra tags; `managed-by: kbforge` is always added |
 
-Embedding model, vector store, dimensions and chunking can't be changed once the knowledge base exists. To try different settings, give it a new `name`, compare the two with `kb.ask()`, then `destroy` the one you don't keep.
+Embedding model, vector store, dimensions, parsing and chunking can't be changed once the knowledge base exists. To try different settings, give it a new `name`, compare the two with `kb.ask()`, then `destroy` the one you don't keep.

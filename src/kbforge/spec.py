@@ -1,7 +1,7 @@
 """What the user wants, written down as data.
 
 A ``KBSpec`` describes the knowledge base you'd like to end up with — its name, where the
-documents are, which embedding model and vector store to use, how to chunk. It says nothing
+documents are, which embedding model and vector store to use, how to parse and chunk. It says nothing
 about *how* to build it; that's the job of the steps in ``kbforge.steps``.
 
 Specs can be built in Python or loaded from a YAML or JSON file (``KBSpec.from_file("kb.yaml")``),
@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-from .models import EmbeddingModel, resolve_model
+from .models import DEFAULT_PARSING_MODEL, EmbeddingModel, ParsingModel, resolve_model, resolve_parsing_model
 
 #: Vector stores kbforge can set up, with the name shown in the UI.
 VECTOR_STORES = {
@@ -57,6 +57,16 @@ CHUNKING_LIMITS: Dict[str, Tuple[int, Optional[int]]] = {
     "buffer_size": (0, 1),
     "breakpoint_threshold": (50, 99),
 }
+
+#: How text can be pulled out of documents, with the name shown in the UI.
+PARSING_STRATEGIES = {
+    "default": "Default parser",
+    "foundation_model": "Foundation model",
+    "data_automation": "Bedrock Data Automation",
+}
+
+#: The longest custom parsing instructions Bedrock accepts.
+MAX_PARSING_PROMPT = 10_000
 
 #: File extensions kbforge reads and writes as config, mapped to their format.
 CONFIG_FORMATS = {".yaml": "yaml", ".yml": "yaml", ".json": "json"}
@@ -367,6 +377,146 @@ def coerce_chunking(value: Any) -> Chunking:
     raise ValueError(f"Can't read chunking config {value!r}")
 
 
+@dataclass
+class Parsing:
+    """How the text is pulled out of each document before it's chunked.
+
+    Use the helpers rather than the constructor:
+
+    * ``Parsing.default()`` — Bedrock's built-in parser reads the plain text of each file. Free
+      and fast, but images, charts and scanned pages are ignored and tables lose their layout.
+    * ``Parsing.foundation_model("nova-lite")`` — a vision model reads every PDF page, so tables,
+      charts, images and scans become text. Each page is a model call during sync, so syncs are
+      slower and cost more. ``prompt=`` replaces Bedrock's instructions to the model. Run
+      ``kbforge.parsing_models()`` to see which models your account can use.
+    * ``Parsing.data_automation()`` — Bedrock Data Automation, a managed service that extracts
+      text, tables and figures without choosing a model. Charged per page.
+
+    Whichever you pick, a file the advanced parser can't handle falls back to the default one.
+    """
+
+    strategy: str = "default"
+    #: Only for ``foundation_model``: an alias from ``PARSING_MODELS``, a model id or a profile id.
+    model: Optional[str] = None
+    #: Only for ``foundation_model``: your own instructions for the model (up to 10,000 characters).
+    prompt: Optional[str] = None
+
+    @classmethod
+    def default(cls) -> Parsing:
+        """Bedrock's built-in text extraction."""
+        return cls("default")
+
+    @classmethod
+    def foundation_model(cls, model: str = DEFAULT_PARSING_MODEL, prompt: Optional[str] = None) -> Parsing:
+        """Have a vision model read each page; ``prompt`` optionally tells it what to focus on."""
+        return cls("foundation_model", model=model, prompt=prompt)
+
+    @classmethod
+    def data_automation(cls) -> Parsing:
+        """Use Bedrock Data Automation to extract text, tables and figures."""
+        return cls("data_automation")
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> Parsing:
+        """Build parsing from a config-file block such as ``{"strategy": "foundation_model", "model": "nova-pro"}``."""
+        data = dict(data)
+        strategy = data.pop("strategy", "default")
+        unexpected = sorted(set(data) - {"model", "prompt"})
+        if unexpected:
+            raise ValueError(f"Unknown parsing settings: {', '.join(unexpected)}. Valid settings: model, prompt.")
+        return cls(strategy, **data)
+
+    def __post_init__(self) -> None:
+        if self.strategy not in PARSING_STRATEGIES:
+            raise ValueError(f"parsing strategy must be one of: {', '.join(PARSING_STRATEGIES)}, got {self.strategy!r}")
+        if self.strategy != "foundation_model":
+            used = [key for key in ("model", "prompt") if getattr(self, key)]
+            if used:
+                raise ValueError(
+                    f"{' and '.join(used)} can only be set with the foundation_model parsing strategy, "
+                    f"not {self.strategy}."
+                )
+            return
+        if not self.model:
+            self.model = DEFAULT_PARSING_MODEL
+        resolve_parsing_model(self.model)  # raises a friendly error for unknown models
+        if self.prompt is not None:
+            if not isinstance(self.prompt, str) or not self.prompt.strip():
+                raise ValueError("parsing prompt must be some text, or left out to use Bedrock's own instructions.")
+            if len(self.prompt) > MAX_PARSING_PROMPT:
+                raise ValueError(
+                    f"parsing prompt is {len(self.prompt):,} characters; Bedrock accepts up to {MAX_PARSING_PROMPT:,}."
+                )
+
+    @property
+    def parser(self) -> Optional[ParsingModel]:
+        """The parsing model, or None unless the strategy is ``foundation_model``."""
+        return resolve_parsing_model(self.model) if self.strategy == "foundation_model" and self.model else None
+
+    def describe(self) -> str:
+        """Short text for the UI, e.g. ``Amazon Nova Lite · reads tables, charts and scans``."""
+        parser = self.parser
+        if parser is not None:
+            custom = ", custom instructions" if self.prompt else ""
+            return f"{parser.label} · reads tables, charts and scans{custom}"
+        if self.strategy == "data_automation":
+            return "Bedrock Data Automation · reads tables, charts and scans"
+        return "Default parser · plain text only"
+
+    def to_api(self, region: str, account: str) -> Optional[Dict[str, Any]]:
+        """The ``parsingConfiguration`` block for CreateDataSource, or None for the default parser."""
+        parser = self.parser
+        if parser is not None:
+            config: Dict[str, Any] = {"modelArn": parser.arn(region, account), "parsingModality": "MULTIMODAL"}
+            if self.prompt:
+                config["parsingPrompt"] = {"parsingPromptText": self.prompt}
+            return {"parsingStrategy": "BEDROCK_FOUNDATION_MODEL", "bedrockFoundationModelConfiguration": config}
+        if self.strategy == "data_automation":
+            return {
+                "parsingStrategy": "BEDROCK_DATA_AUTOMATION",
+                "bedrockDataAutomationConfiguration": {"parsingModality": "MULTIMODAL"},
+            }
+        return None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """How this parsing is written in a config file (only the settings that are set)."""
+        data: Dict[str, Any] = {"strategy": self.strategy}
+        for key in ("model", "prompt"):
+            if getattr(self, key):
+                data[key] = getattr(self, key)
+        return data
+
+
+def coerce_parsing(value: Any) -> Parsing:
+    """Accept ``None``, a strategy name, a parsing model alias or id, a config-file dict, or a Parsing.
+
+    ``parsing="claude-sonnet-4"`` is short for ``Parsing.foundation_model("claude-sonnet-4")``.
+    """
+    if value is None:
+        return Parsing.default()
+    if isinstance(value, Parsing):
+        return value
+    if isinstance(value, str):
+        presets: Dict[str, Callable[[], Parsing]] = {
+            "default": Parsing.default,
+            "foundation_model": Parsing.foundation_model,
+            "data_automation": Parsing.data_automation,
+            "bda": Parsing.data_automation,
+        }
+        if value in presets:
+            return presets[value]()
+        try:
+            return Parsing.foundation_model(value)
+        except ValueError:
+            raise ValueError(
+                f"Unknown parsing {value!r}. Use one of: {', '.join(PARSING_STRATEGIES)}, or a parsing model "
+                "such as 'nova-lite'. Run kbforge.parsing_models() to see the models your account can use."
+            ) from None
+    if isinstance(value, dict):
+        return Parsing.from_dict(value)
+    raise ValueError(f"Can't read parsing config {value!r}")
+
+
 def _fit(name: str, limit: int) -> str:
     """Shorten a generated name to an AWS length limit, adding a short hash so it stays unique."""
     if len(name) <= limit:
@@ -401,8 +551,8 @@ class KBSpec:
     """Everything needed to describe one knowledge base.
 
     Only ``name`` and ``source`` are required; everything else has a sensible default:
-    Titan v2 embeddings, S3 Vectors storage, fixed 300-token chunks, and a first sync
-    right after creation.
+    Titan v2 embeddings, S3 Vectors storage, Bedrock's default parser, fixed 300-token
+    chunks, and a first sync right after creation.
     """
 
     name: str
@@ -411,6 +561,8 @@ class KBSpec:
     dimensions: Optional[int] = None
     vector_store: str = "s3_vectors"
     chunking: Chunking = field(default_factory=Chunking.fixed)
+    #: How text is pulled out of documents. Default: Bedrock's built-in text extraction.
+    parsing: Parsing = field(default_factory=Parsing.default)
     description: str = ""
     #: Reuse an existing IAM role instead of creating one (common when IAM is locked down).
     role_arn: Optional[str] = None
@@ -424,6 +576,7 @@ class KBSpec:
     def __post_init__(self) -> None:
         self.source = coerce_source(self.source)
         self.chunking = coerce_chunking(self.chunking)
+        self.parsing = coerce_parsing(self.parsing)
         store = _VECTOR_STORE_ALIASES.get(str(self.vector_store).lower())
         if store is None:
             raise ValueError(f"vector_store must be one of {list(VECTOR_STORES)}, got {self.vector_store!r}")
@@ -532,6 +685,8 @@ class KBSpec:
             "vector_store": self.vector_store,
             "chunking": self.chunking.to_dict(),
         }
+        if self.parsing.strategy != "default":
+            data["parsing"] = self.parsing.to_dict()
         for key in ("dimensions", "description", "role_arn", "permissions_boundary", "region"):
             if getattr(self, key):
                 data[key] = getattr(self, key)

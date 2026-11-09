@@ -111,3 +111,47 @@ def test_user_text_is_escaped_in_the_preview(wiz):
 def test_stepper_marks_finished_stages():
     html = wizard_style.stepper(4)
     assert html.count('class="stp done"') == 3
+
+
+def test_parsing_model_choice_appears_only_for_foundation_model(wiz):
+    fill(wiz)
+    assert wiz.parser_box.layout.display == "none" and "parsing" not in wiz._options()
+
+    wiz.parsing.value = "foundation_model"
+    assert wiz.parser_box.layout.display is None
+    assert wiz._options()["parsing"] == "nova-lite"
+    assert "Amazon Nova Lite" in wiz.preview.value
+
+    wiz.parser.value = "claude-sonnet-4"
+    wiz.parser_prompt.value = "Transcribe tables as Markdown."
+    assert wiz._options()["parsing"] == {
+        "strategy": "foundation_model",
+        "model": "claude-sonnet-4",
+        "prompt": "Transcribe tables as Markdown.",
+    }
+
+    wiz.parsing.value = "data_automation"
+    assert wiz._options()["parsing"] == "data_automation"
+
+
+def test_wizard_lists_the_parsers_the_account_offers(wiz, fake_aws, monkeypatch):
+    monkeypatch.setattr("kbforge.wizard.Aws", lambda region=None, session=None: fake_aws)
+    fill(wiz)
+    wiz.parsing.value = "foundation_model"
+    wiz.parser.value = "nova-pro"
+
+    wiz.parser_list_btn.click()
+    titles = [box.children[0].value for box in wiz.parser.children]
+    assert any("Claude 3 Haiku" in t for t in titles)
+    assert wiz.parser.value == "nova-pro"  # the pick survives the refresh
+    assert "your account can use" in wiz.parser_hint.value
+
+
+def test_wizard_parser_listing_failure_is_explained(wiz, fake_aws, monkeypatch):
+    fake_aws.services["bedrock"].denied = True
+    monkeypatch.setattr("kbforge.wizard.Aws", lambda region=None, session=None: fake_aws)
+    wiz.parsing.value = "foundation_model"
+
+    wiz.parser_list_btn.click()
+    assert "bedrock:ListFoundationModels" in wiz.parser_hint.value
+    assert wiz.parser.value == "nova-lite"

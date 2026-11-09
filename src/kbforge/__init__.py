@@ -14,9 +14,10 @@ from typing import Any, Optional
 
 from .guide import guide
 from .knowledge_base import Answers, KBForgeError, KnowledgeBase, Status
-from .models import EMBEDDING_MODELS
+from .models import EMBEDDING_MODELS, PARSING_MODELS
+from .parsers import ParsingModels
 from .plan import ApplyResult, Plan
-from .spec import Chunking, KBSpec, S3Source, WebSource
+from .spec import Chunking, KBSpec, Parsing, S3Source, WebSource
 
 __version__ = "0.1.0"
 
@@ -28,19 +29,39 @@ def wizard(region: Optional[str] = None, session: Any = None) -> Any:
     return _wizard(region=region, session=session)
 
 
+def parsing_models(region: Optional[str] = None, session: Any = None) -> ParsingModels:
+    """List the models your account can use to parse documents (read-only; shows a card in a notebook).
+
+    Pass one as ``KnowledgeBase(..., parsing="nova-pro")``. Falls back to kbforge's built-in list,
+    with a note, if your role can't list models.
+    """
+    from .aws import Aws
+    from .parsers import known_parsing_models, list_parsing_models
+
+    try:
+        aws = Aws(region=region, session=session)
+    except Exception as exc:
+        return known_parsing_models(region or "", f"Couldn't connect to AWS ({exc}).")
+    return list_parsing_models(aws)
+
+
 __all__ = [
     "EMBEDDING_MODELS",
+    "PARSING_MODELS",
     "Answers",
     "ApplyResult",
     "Chunking",
     "KBForgeError",
     "KBSpec",
     "KnowledgeBase",
+    "Parsing",
+    "ParsingModels",
     "Plan",
     "S3Source",
     "Status",
     "WebSource",
     "__version__",
     "guide",
+    "parsing_models",
     "wizard",
 ]

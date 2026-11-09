@@ -64,6 +64,24 @@ dimensions: 1024
 vector_store: s3_vectors
 
 
+# How the text is read out of each file before it's chunked. Changing it on an existing
+# knowledge base means destroying and applying again (or using a new `name`).
+#   default            Bedrock pulls out the plain text. Free and fast; images, charts
+#                      and scanned pages are skipped. (default)
+#   foundation_model   A vision model reads every PDF page, so tables, charts and scans
+#                      become text. Each page is a model call on every sync (slower,
+#                      costs more). `kbforge parsers` lists the models your account can
+#                      use: nova-lite, nova-pro, claude-haiku-4.5, claude-sonnet-4,
+#                      llama4-maverick, or any model id it prints.
+#   data_automation    Bedrock Data Automation extracts text, tables and figures, with
+#                      no model to choose. Billed per page.
+# parsing:
+#   strategy: foundation_model
+#   model: nova-lite
+#   prompt: |                  # optional, up to 10,000 characters
+#     Transcribe every table as Markdown. Describe each chart in one sentence.
+
+
 # How documents are cut into chunks before embedding. Pick ONE strategy and give only
 # that strategy's settings; a setting from a different strategy is reported as an error.
 # Any setting you leave out keeps the default shown. Values outside the ranges below

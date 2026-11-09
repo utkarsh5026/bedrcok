@@ -54,6 +54,7 @@
         <tr><td><code>dimensions</code></td><td>model default</td><td>Vector size. Titan v2 supports 256, 512 or 1024.</td></tr>
         <tr><td><code>vector_store</code></td><td><code>s3_vectors</code></td><td><code>s3_vectors</code> or <code>opensearch_serverless</code> (needs <code>pip install "kbforge[opensearch]"</code>).</td></tr>
         <tr><td><code>chunking</code></td><td><code>fixed</code></td><td><code>fixed</code>, <code>hierarchical</code>, <code>semantic</code>, <code>none</code>, or <code>Chunking.fixed(500, 10)</code> for custom sizes. Fixed once the data source exists.</td></tr>
+        <tr><td><code>parsing</code></td><td><code>default</code></td><td>How text is read out of each file. <code>default</code> extracts plain text. A parsing model (<code>"nova-lite"</code>, <code>"claude-sonnet-4"</code>, any model id from <code>kbforge.parsing_models()</code>, or <code>Parsing.foundation_model("nova-pro", prompt="...")</code>) reads tables, charts and scans in PDFs. <code>data_automation</code> uses Bedrock Data Automation. Not changed on an existing data source.</td></tr>
         <tr><td><code>role_arn</code></td><td>create one</td><td>Reuse an existing Bedrock role instead of creating one. It's never deleted by kbforge.</td></tr>
         <tr><td><code>permissions_boundary</code></td><td>none</td><td>Attached to the role kbforge creates, if your organisation requires one.</td></tr>
         <tr><td><code>region</code></td><td>session default</td><td>AWS region for everything. Must match your bucket's region.</td></tr>
@@ -69,10 +70,11 @@
       <tbody>
         <tr><td>Vector store</td><td><b>S3 Vectors</b>: serverless, no minimum cost, nothing to manage.</td><td>You need hybrid (keyword + vector) search or very low-latency, high-QPS queries. OpenSearch Serverless bills for at least a couple of OCUs while it exists.</td></tr>
         <tr><td>Embedding model</td><td><b>Titan v2, 1024d</b>: cheap, multilingual, long input.</td><td>English-only corpus where retrieval quality matters most: try <code>cohere-en</code>. Many languages mixed together: <code>cohere-multi</code>.</td></tr>
+        <tr><td>Parsing</td><td><b>Default parser</b>: plain text, free and fast.</td><td>PDFs whose meaning sits in tables, charts or scanned pages: a parsing model. Start with <code>nova-lite</code> (cheap); <code>nova-pro</code> or <code>claude-sonnet-4</code> for dense layouts. Each page is a model call on every sync, so syncs are slower and cost more. Run <code>kbforge.parsing_models()</code> (or <code>kbforge parsers</code>) to see what your account offers. If the model can't read a file, Bedrock falls back to the default parser for it.</td></tr>
         <tr><td>Chunking</td><td><b>Fixed, 300 tokens, 20% overlap.</b></td><td>Long structured documents (policies, manuals): <code>hierarchical</code>. Topic changes don't line up with paragraphs: <code>semantic</code> (slower and costs more per sync). Already-small files such as FAQs: <code>none</code>.</td></tr>
       </tbody>
     </table></div>
-    <div class="callout">Embedding model, vector store and chunking can't be changed in place. To try different settings, give the knowledge base a new name (e.g. <code>hr-policies-v2</code>), compare with <code>ask()</code>, then <code>destroy()</code> the one you don't keep.</div>
+    <div class="callout">Embedding model, vector store, parsing and chunking can't be changed in place. To try different settings, give the knowledge base a new name (e.g. <code>hr-policies-v2</code>), compare with <code>ask()</code>, then <code>destroy()</code> the one you don't keep.</div>
 
     <h2 id="yaml">YAML, JSON &amp; the CLI</h2>
     <p>Keep definitions in git and build them from a terminal or CI with the same plan → apply flow. <a href="https://github.com/utkarsh5026/bedrcok/blob/main/examples/kb.yaml"><code>examples/kb.yaml</code></a> documents every option, including the settings for each chunking strategy. From a notebook, <code>kb.save("kb.yaml")</code> (or <code>"kb.json"</code>) writes the file and <code>KnowledgeBase.from_file("kb.yaml")</code> reads it back; the extension picks the format.</p>
@@ -87,6 +89,10 @@ chunking:
   strategy: fixed
   max_tokens: 300
   overlap_percent: 20
+parsing:                        <span class="c"># optional: have a model read tables, charts and scans</span>
+  strategy: foundation_model    <span class="c"># default | foundation_model | data_automation</span>
+  model: nova-lite              <span class="c"># see: kbforge parsers</span>
+  prompt: Transcribe every table as Markdown.   <span class="c"># optional</span>
 tags:
   team: people-ops</code></pre>
     <p>Each chunking strategy takes its own settings. Give only the ones for the strategy you pick; a setting from another strategy is reported as an error:</p>
@@ -114,7 +120,8 @@ kbforge ask kb.yaml "question"
 kbforge sync kb.yaml
 kbforge status kb.yaml
 kbforge destroy kb.yaml
-kbforge models                    <span class="c"># supported embedding models</span></code></pre>
+kbforge models                    <span class="c"># supported embedding models</span>
+kbforge parsers                   <span class="c"># models your account can use to parse documents</span></code></pre>
     <figure class="narrow">
       <a href="assets/screens/cli-plan.png"><img src="assets/screens/cli-plan.png" alt="Terminal output of kbforge plan: preflight checks with ticks and a colour-coded list of steps" loading="lazy" width="1760" height="1114"></a>
     </figure>
@@ -127,7 +134,7 @@ kbforge models                    <span class="c"># supported embedding models</
       <tbody>
         <tr><td>S3 vector bucket</td><td><code>kbforge-hr-policies</code></td><td>Holds the index.</td></tr>
         <tr><td>Vector index</td><td><code>hr-policies-index</code></td><td>float32, cosine. Bedrock's text/metadata keys are marked non-filterable to avoid the 2 KB metadata limit.</td></tr>
-        <tr><td>IAM role</td><td><code>AmazonBedrockExecutionRoleForKnowledgeBase_kbf-hr-policies</code></td><td>Trusted only by Bedrock in your account. Can invoke the one embedding model, read the source bucket and use this index.</td></tr>
+        <tr><td>IAM role</td><td><code>AmazonBedrockExecutionRoleForKnowledgeBase_kbf-hr-policies</code></td><td>Trusted only by Bedrock in your account. Can invoke the one embedding model (and the parsing model, if you chose one), read the source bucket and use this index.</td></tr>
         <tr><td>Knowledge base</td><td><code>hr-policies</code></td><td></td></tr>
         <tr><td>Data source</td><td><code>hr-policies-source</code></td><td>Deletion policy <code>DELETE</code>: removing it also removes its vectors.</td></tr>
       </tbody>
@@ -140,6 +147,7 @@ kbforge models                    <span class="c"># supported embedding models</
       <summary>Show the policy (<a href="notebook-role-policy.json" download>download JSON</a>)</summary>
       <pre><code id="policy">Loading…</code></pre>
     </details>
+    <p>To list parsing models (<code>kbforge.parsing_models()</code>), also allow <code>bedrock:ListFoundationModels</code> and <code>bedrock:ListInferenceProfiles</code>; they're in the policy above. Without them you see kbforge's built-in list instead.</p>
     <p>For OpenSearch Serverless also allow <code>aoss:CreateCollection</code>, <code>aoss:BatchGetCollection</code>, <code>aoss:DeleteCollection</code>, <code>aoss:CreateSecurityPolicy</code>, <code>aoss:GetSecurityPolicy</code>, <code>aoss:DeleteSecurityPolicy</code>, <code>aoss:CreateAccessPolicy</code>, <code>aoss:GetAccessPolicy</code>, <code>aoss:UpdateAccessPolicy</code>, <code>aoss:DeleteAccessPolicy</code>, <code>aoss:APIAccessAll</code> and <code>aoss:TagResource</code>.</p>
     <div class="callout"><b>IAM locked down?</b> Have an admin create a role that trusts <code>bedrock.amazonaws.com</code>, then pass <code>role_arn=</code>. The plan shows the exact permissions that role needs in the "IAM service role" fold-out, and you can drop the IAM statements above.</div>
 
@@ -148,6 +156,8 @@ kbforge models                    <span class="c"># supported embedding models</
       <thead><tr><th>You see</th><th>What it means</th><th>Fix</th></tr></thead>
       <tbody>
         <tr><td>Embedding model ✕ "can't invoke this model"</td><td>Model access isn't enabled for the account, or your role lacks <code>bedrock:InvokeModel</code>.</td><td>Bedrock console → Model access, or ask your admin. Try another region or model.</td></tr>
+        <tr><td>Parsing model ✕ "can't invoke" or "isn't available"</td><td>The model isn't enabled for the account, isn't offered in this region, or your role lacks <code>bedrock:InvokeModel</code>.</td><td>Run <code>kbforge.parsing_models()</code> and pick one from the list, or enable access in the Bedrock console.</td></tr>
+        <tr><td>Data source ⚠ "parses with … but the spec says …"</td><td>The data source was built with a different parser. kbforge doesn't change it in place.</td><td>Use a new name, or <code>destroy()</code> and apply again.</td></tr>
         <tr><td>Source bucket ✕ "doesn't exist"</td><td>Typo in the bucket name, or it's in another account.</td><td>Check the <code>s3://</code> path.</td></tr>
         <tr><td>Source bucket region ⚠</td><td>Bucket and knowledge base are in different regions. Bedrock requires them to match.</td><td>Pass <code>region="&lt;bucket region&gt;"</code>.</td></tr>
         <tr><td>Source documents ⚠ "types Bedrock will skip"</td><td>Images, zips and similar files are ignored.</td><td>Nothing to do, or convert them. Files over 50 MB fail and should be split.</td></tr>
@@ -159,7 +169,7 @@ kbforge models                    <span class="c"># supported embedding models</
     </table></div>
 
     <h2 id="faq">FAQ</h2>
-    <details><summary>Does <code>plan()</code> cost anything or change anything?</summary><p>It changes nothing. The only billable call is one tiny embedding of the word "hello", which proves the model works for you. It costs a fraction of a cent.</p></details>
+    <details><summary>Does <code>plan()</code> cost anything or change anything?</summary><p>It changes nothing. The only billable call is one tiny embedding of the word "hello", which proves the model works for you (plus a one-token request to the parsing model, if you chose one). It costs a fraction of a cent.</p></details>
     <details><summary>Can I adopt a knowledge base someone created by hand?</summary><p>If you use the same name, kbforge finds it and shows it as <span class="badge" style="--c:var(--muted)">exists</span>, or as <span class="badge" style="--c:var(--red)">blocked</span> if its settings differ. <code>destroy()</code> leaves it alone because it has no kbforge tag.</p></details>
     <details><summary>Where's the state file?</summary><p>There isn't one. Every resource name is derived from the knowledge base name, so kbforge always looks the resources up live in AWS. Two people running the same config file see the same plan.</p></details>
     <details><summary>Can my application query it without kbforge?</summary><p>Yes. It's a normal Bedrock knowledge base. Use <code>bedrock-agent-runtime</code>'s <code>retrieve</code> or <code>retrieve_and_generate</code> with the knowledge base ID from the "ready" card.</p></details>

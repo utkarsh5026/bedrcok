@@ -22,10 +22,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import boto3
 
 from .aws import Aws
+from .parsers import ParsingModels, list_parsing_models
 from .plan import ApplyResult, Plan, make_plan
-from .spec import VECTOR_STORES, Chunking, KBSpec, Source
+from .spec import VECTOR_STORES, Chunking, KBSpec, Parsing, Source
 from .steps import Ctx, describe_stats, explain_error, latest_ingestion_job, run_ingestion
-from .steps.bedrock import DataSourceStep, KnowledgeBaseStep
+from .steps.bedrock import DataSourceStep, KnowledgeBaseStep, describe_parsing
 
 #: Bedrock's storage type names mapped to the labels kbforge shows.
 STORE_LABELS = {
@@ -75,6 +76,7 @@ class Status:
     store: str = ""
     ds_id: str = ""
     source: str = ""
+    parsing: str = ""
     last_sync: Optional[Dict[str, Any]] = None
 
     def rows(self) -> List[Tuple[str, str]]:
@@ -92,6 +94,7 @@ class Status:
             ("Vector store", self.store),
             ("Data source ID", self.ds_id),
             ("Source", self.source),
+            ("Parsing", self.parsing),
             ("Last sync", sync),
         ]
 
@@ -125,6 +128,7 @@ class KnowledgeBase:
         dimensions: Optional[int] = None,
         vector_store: str = "s3_vectors",
         chunking: Union[str, Chunking, None] = None,
+        parsing: Union[str, Dict[str, Any], Parsing, None] = None,
         description: str = "",
         role_arn: Optional[str] = None,
         permissions_boundary: Optional[str] = None,
@@ -140,6 +144,7 @@ class KnowledgeBase:
             dimensions=dimensions,
             vector_store=vector_store,
             chunking=chunking,  # type: ignore[arg-type]
+            parsing=parsing,  # type: ignore[arg-type]  # coerced in KBSpec.__post_init__
             description=description,
             role_arn=role_arn,
             permissions_boundary=permissions_boundary,
@@ -273,8 +278,24 @@ class KnowledgeBase:
             store=STORE_LABELS.get(store_type, store_type),
             ds_id=ds["dataSourceId"] if ds else "",
             source=self.spec.source.describe(),
+            parsing=self._parser_label(ds),
             last_sync=latest_ingestion_job(self.aws, kb["knowledgeBaseId"], ds["dataSourceId"]) if ds else None,
         )
+
+    @staticmethod
+    def _parser_label(ds: Optional[Dict[str, Any]]) -> str:
+        """How an existing data source parses documents, for the status card ("" if there's no data source)."""
+        if not ds:
+            return ""
+        parser = describe_parsing(ds.get("vectorIngestionConfiguration", {}).get("parsingConfiguration"))
+        return "Default parser" if parser == "the default parser" else parser
+
+    def parsing_models(self) -> ParsingModels:
+        """The models in this knowledge base's region that can parse documents, and what to pass to use them.
+
+        Read-only. Pick one and pass it as ``parsing=`` (e.g. ``parsing="nova-pro"``).
+        """
+        return list_parsing_models(self.aws)
 
     def destroy(self, confirm: bool = False, force: bool = False) -> Union[Plan, ApplyResult]:
         """Delete everything kbforge created for this knowledge base.

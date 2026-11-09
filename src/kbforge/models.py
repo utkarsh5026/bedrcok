@@ -1,17 +1,23 @@
-"""The embedding models kbforge knows how to set up.
+"""The models kbforge knows how to set up: embedding models and parsing models.
 
 An embedding model turns a chunk of text into a list of numbers (a vector) so that chunks
 with similar meaning end up close together. The knowledge base uses the same model for your
 documents and for every question, so it can't be changed after the KB is created.
 
-Users pick a model by a short alias (``"titan-v2"``) instead of a long model id.
+A parsing model is optional. Bedrock's default parser only pulls the plain text out of each
+file; with a parsing model, a vision-capable model reads every PDF page instead, so tables,
+charts, images and scanned pages become searchable text too.
+
+Users pick a model by a short alias (``"titan-v2"``, ``"nova-lite"``) instead of a long model id.
+To see which parsing models your own account can use, call ``kbforge.parsing_models()``.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -105,3 +111,133 @@ def resolve_model(name: str, dimensions: Optional[int] = None) -> EmbeddingModel
             "or pass a raw model id together with dimensions=..."
         )
     return EmbeddingModel(name, name, name, (dimensions,), dimensions)
+
+
+#: Region prefixes of Bedrock's cross-region inference profiles, as in ``us.amazon.nova-lite-v1:0``.
+PROFILE_PREFIXES = ("us", "eu", "apac", "global", "us-gov", "jp", "au", "ca")
+
+#: What a model id has to look like: ``provider.model-name`` with an optional ``:version``.
+_MODEL_ID_RE = re.compile(r"^[a-z0-9-]+(\.[A-Za-z0-9-]+)+(:[A-Za-z0-9-]+)*$")
+
+
+def profile_geo(region: str) -> str:
+    """The inference-profile prefix for a region's geography, e.g. ``eu`` for ``eu-west-1``."""
+    if region.startswith("us-gov"):
+        return "us-gov"
+    if region.startswith("eu-"):
+        return "eu"
+    if region.startswith("ap-"):
+        return "apac"
+    return "us"
+
+
+@dataclass(frozen=True)
+class ParsingModel:
+    """A model Bedrock can use to read documents, page by page, before they're chunked.
+
+    Most newer models can only be called through a cross-region *inference profile*: an id
+    like ``us.amazon.nova-lite-v1:0`` that lets Bedrock run each request in whichever region of
+    that geography has capacity. ``profile`` says how this model is called.
+    """
+
+    alias: str
+    #: The foundation model id, without any profile prefix.
+    model_id: str
+    label: str
+    note: str = ""
+    #: ``"auto"`` uses the profile for your region's geography (``us.``, ``eu.``, ``apac.``);
+    #: ``""`` calls the model directly, without a profile; anything else is that exact prefix.
+    profile: str = "auto"
+
+    def invoke_id(self, region: str) -> str:
+        """The id to pass as ``modelId``: the profile id, or the plain model id."""
+        if not self.profile:
+            return self.model_id
+        prefix = profile_geo(region) if self.profile == "auto" else self.profile
+        return f"{prefix}.{self.model_id}"
+
+    def arn(self, region: str, account: str) -> str:
+        """The ARN Bedrock's data source expects for this parser in a given region and account."""
+        if not self.profile:
+            return f"arn:aws:bedrock:{region}::foundation-model/{self.model_id}"
+        return f"arn:aws:bedrock:{region}:{account}:inference-profile/{self.invoke_id(region)}"
+
+    def iam_resources(self, region: str, account: str) -> List[str]:
+        """What the knowledge base's role must be allowed to invoke to use this parser.
+
+        A profile sends each request to one of several regions, so the role needs the model
+        itself in every region as well as the profile.
+        """
+        if not self.profile:
+            return [self.arn(region, account)]
+        return [self.arn(region, account), f"arn:aws:bedrock:*::foundation-model/{self.model_id}"]
+
+
+#: Parsing models kbforge knows by alias. Bedrock accepts Claude, Nova and Llama 4 vision models;
+#: any of them can also be given by its model id (see ``kbforge.parsing_models()``).
+PARSING_MODELS = {
+    m.alias: m
+    for m in [
+        ParsingModel(
+            "nova-lite",
+            "amazon.nova-lite-v1:0",
+            "Amazon Nova Lite",
+            "Good default. Cheap and quick; handles tables and simple charts.",
+        ),
+        ParsingModel(
+            "nova-pro",
+            "amazon.nova-pro-v1:0",
+            "Amazon Nova Pro",
+            "More accurate on dense layouts and charts. Costs more than Lite.",
+        ),
+        ParsingModel(
+            "claude-haiku-4.5",
+            "anthropic.claude-haiku-4-5-20251001-v1:0",
+            "Claude Haiku 4.5",
+            "Fast Claude model. Strong on tables and forms.",
+        ),
+        ParsingModel(
+            "claude-sonnet-4",
+            "anthropic.claude-sonnet-4-20250514-v1:0",
+            "Claude Sonnet 4",
+            "Best on complex tables, charts and scans. The most expensive here.",
+        ),
+        ParsingModel(
+            "llama4-maverick",
+            "meta.llama4-maverick-17b-instruct-v1:0",
+            "Llama 4 Maverick 17B",
+            "Open-weight alternative from Meta.",
+        ),
+    ]
+}
+
+DEFAULT_PARSING_MODEL = "nova-lite"
+
+
+def is_parser_family(model_id: str) -> bool:
+    """True for the model families Bedrock accepts as a knowledge-base parser (Claude, Nova, Llama 4)."""
+    return any(family in model_id for family in ("anthropic.claude", "amazon.nova", "meta.llama4"))
+
+
+def resolve_parsing_model(name: str) -> ParsingModel:
+    """Accept an alias (``"nova-lite"``), a model id, or an inference profile id (``"us.amazon.nova-lite-v1:0"``)."""
+    if name in PARSING_MODELS:
+        return PARSING_MODELS[name]
+    # A plain model id means "call the model directly"; a prefixed one names a profile.
+    if not _MODEL_ID_RE.match(name or ""):
+        raise ValueError(
+            f"Unknown parsing model {name!r}. Use one of: {', '.join(PARSING_MODELS)}, or a Bedrock model id "
+            "such as 'anthropic.claude-3-haiku-20240307-v1:0'. Run kbforge.parsing_models() to see what your "
+            "account can use."
+        )
+    prefix, _, rest = name.partition(".")
+    profile = prefix if prefix in PROFILE_PREFIXES else ""
+    base = rest if profile else name
+    if not is_parser_family(base):
+        raise ValueError(
+            f"{name!r} can't parse documents: Bedrock only accepts Claude, Amazon Nova and Llama 4 vision "
+            "models as parsers. Run kbforge.parsing_models() to see which ones your account can use."
+        )
+    known = next((m for m in PARSING_MODELS.values() if m.model_id == base), None)
+    label = known.label if known else name
+    return ParsingModel(name, base, label, known.note if known else "", profile=profile)

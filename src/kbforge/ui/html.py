@@ -17,6 +17,7 @@ from .theme import SERIES, card, esc
 
 if TYPE_CHECKING:
     from ..knowledge_base import Answers, Status
+    from ..parsers import ParsingModels
     from ..plan import ApplyResult, Plan, PlanItem
 
 #: How each action is labelled and coloured in the plan.
@@ -67,13 +68,16 @@ def _source_stats(checks: List[Check]) -> str:
 
 
 def render_pipeline(spec: KBSpec, source_stats: str = "") -> str:
-    """The data flow, left to right: source → chunking → embeddings → vector store → knowledge base."""
+    """The data flow, left to right: source → (parsing) → chunking → embeddings → vector store → knowledge base."""
+    parsing = spec.parsing.describe().split(" · ", 1)
     stages = [
         (
             "Source",
             spec.source.describe(),
             source_stats or ("S3 bucket" if spec.source.kind == "s3" else "Web crawler"),
         ),
+        # The default parser is left out to keep the common case short.
+        *([("Parsing", parsing[0], parsing[-1])] if spec.parsing.strategy != "default" else []),
         ("Chunking", spec.chunking.describe().split(" · ")[0], spec.chunking.describe().split(" · ", 1)[-1]),
         ("Embeddings", spec.model.label, f"{spec.dims} dimensions"),
         (
@@ -321,4 +325,45 @@ def render_spec(spec: KBSpec) -> str:
         f'<div class="muted">Not checked against AWS yet.</div></div>'
         f'<div class="section"><h3>Data flow</h3>{render_pipeline(spec)}</div>'
         f'<div class="section next"><h3>Next</h3>{next_step}</div>'
+    )
+
+
+def render_parsing_models(models: ParsingModels) -> str:
+    """The models that can parse documents in a region, with the value to pass as ``parsing=``."""
+    if models.live:
+        intro = (
+            f"{len(models)} model(s) in {esc(models.region)} can read your documents' tables, charts and scans. "
+            "The plan checks you can actually call the one you pick."
+        )
+    else:
+        intro = "The parsers kbforge knows. Availability depends on your region."
+    warning = f'<div class="warn c-amber">{esc(models.error)}</div>' if models.error else ""
+    rows = "".join(
+        f'<tr><td class="mono">{esc(o.value)}'
+        + (' <span class="badge c-green">recommended</span>' if o.recommended else "")
+        + f"</td><td>{esc(o.label)}</td><td>{esc(o.provider)}</td><td>{esc(o.route)}</td>"
+        f'<td class="muted">{esc(o.note)}</td></tr>'
+        for o in models
+    )
+    table = (
+        '<div class="tbl"><table><thead><tr><th>Pass as parsing=</th><th>Model</th><th>Provider</th>'
+        f"<th>Called via</th><th>Notes</th></tr></thead><tbody>{rows}</tbody></table></div>"
+        if models.options
+        else '<div class="muted">No parsing models are available in this region. Try another region, '
+        'or use parsing="data_automation".</div>'
+    )
+    example = models.values[0] if models.options else "nova-lite"
+    usage = _code(
+        f'kb = KnowledgeBase("hr-policies", source="s3://my-bucket/hr/", parsing="{example}")\n\n'
+        "# with your own instructions for the model:\n"
+        "from kbforge import Parsing\n"
+        f'parsing = Parsing.foundation_model("{example}", prompt="Transcribe tables as Markdown.")'
+    )
+    return card(
+        '<div class="head"><div class="eyebrow">kbforge · parsing models</div>'
+        "<h2>Models that can parse documents</h2>"
+        + _chips([("region", models.region or "not set"), ("source", "your account" if models.live else "built-in")])
+        + f'<div class="muted">{intro}</div>{warning}</div>'
+        f'<div class="section">{table}</div>'
+        f'<div class="section next"><h3>Use one</h3>{usage}</div>'
     )
