@@ -1363,7 +1363,7 @@ requires-dist = [
     { name = "ipython", marker = "extra == 'notebook'", specifier = ">=7.0" },
     { name = "ipywidgets", marker = "extra == 'notebook'", specifier = ">=8.0" },
     { name = "kbforge", extras = ["notebook", "opensearch"], marker = "extra == 'all'" },
-    { name = "opensearch-py", marker = "extra == 'opensearch'", specifier = ">=2.4" },
+    { name = "opensearch-py", marker = "extra == 'opensearch'", specifier = ">=2.4.1" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", marker = "extra == 'opensearch'", specifier = ">=2.31" },
 ]
@@ -1374,7 +1374,7 @@ dev = [
     { name = "ipython", specifier = ">=7.0" },
     { name = "ipywidgets", specifier = ">=8.0" },
     { name = "mypy", specifier = ">=1.10" },
-    { name = "opensearch-py", specifier = ">=2.4" },
+    { name = "opensearch-py", specifier = ">=2.4.1" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "requests", specifier = ">=2.31" },
     { name = "rich", specifier = ">=13.0" },

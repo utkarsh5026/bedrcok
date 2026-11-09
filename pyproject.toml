@@ -30,7 +30,8 @@ dependencies = [
 # Interactive form (kbforge.wizard()). SageMaker images usually ship this already.
 notebook = ["ipython>=7.0", "ipywidgets>=8.0"]
 # Only needed when vector_store="opensearch_serverless" (to create the vector index).
-opensearch = ["opensearch-py>=2.4", "requests>=2.31"]
+# 2.4.0 itself fails to import without aiohttp, so 2.4.1 is the real minimum.
+opensearch = ["opensearch-py>=2.4.1", "requests>=2.31"]
 all = ["kbforge[notebook,opensearch]"]
 
 [project.scripts]
@@ -44,7 +45,7 @@ dev = [
     "types-PyYAML",
     "ipython>=7.0",
     "ipywidgets>=8.0",
-    "opensearch-py>=2.4",
+    "opensearch-py>=2.4.1",
     "requests>=2.31",
     "rich>=13.0",
 ]
