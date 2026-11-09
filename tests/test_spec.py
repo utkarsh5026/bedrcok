@@ -93,8 +93,9 @@ def test_unknown_config_extension_is_explained(tmp_path):
 
 def test_broken_json_points_at_the_line(tmp_path):
     path = tmp_path / "kb.json"
-    path.write_text('{\n  "name": "a",\n  "source": "s3://b/",\n}')
-    with pytest.raises(ValueError, match="isn't valid JSON.*line 4"):
+    # A missing comma, not a trailing one: Python 3.13 changed where trailing commas are reported.
+    path.write_text('{\n  "name": "a"\n  "source": "s3://b/"\n}')
+    with pytest.raises(ValueError, match="isn't valid JSON.*line 3, column 3"):
         KBSpec.from_file(path)
 
 
