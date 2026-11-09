@@ -145,8 +145,78 @@ def test_destroy_leaves_untagged_kb_alone_unless_forced(kb, fake_aws):
     for item in fake_aws.services["bedrock-agent"].kbs.values():
         item["tags"] = {}
 
-    assert actions(kb.destroy())["Bedrock knowledge base"] == Action.KEEP
+    preview = actions(kb.destroy())
+    assert preview["Bedrock knowledge base"] == Action.KEEP
+    assert preview["Data source"] == Action.KEEP  # can't be tagged, so it follows its knowledge base
     assert actions(kb.destroy(force=True))["Bedrock knowledge base"] == Action.DELETE
+
+
+def test_names_differing_only_in_case_or_separator_dont_share_resources(fake_aws):
+    first = KnowledgeBase("HR_Policies", source="s3://my-company-docs/hr/", region="us-east-1")
+    first._aws = fake_aws
+    assert first.apply().ok
+
+    second = KnowledgeBase("hr-policies", source="s3://my-company-docs/hr/", region="us-east-1")
+    second._aws = fake_aws
+    plan = second.plan()
+    assert not plan.ready
+    assert actions(plan)["S3 vector bucket"] == Action.CONFLICT
+    assert actions(plan)["IAM service role"] == Action.CONFLICT
+    assert any("HR_Policies" in b for b in plan.blockers)
+    assert isinstance(second.apply(), Plan)
+
+    preview = actions(second.destroy())
+    assert {preview[t] for t in ("IAM service role", "Vector index", "S3 vector bucket")} == {Action.KEEP}
+    assert second.destroy(confirm=True).ok
+    assert fake_aws.services["s3vectors"].indexes and fake_aws.services["iam"].roles
+    assert first.plan().ready and not first.plan().has_work
+
+
+def throttle_kb_lookups(fake_aws):
+    """Make every knowledge-base lookup fail the way a throttled API call does."""
+
+    def throttled(name):
+        raise aws_error("ThrottlingException", "Rate exceeded")
+
+    fake_aws.services["bedrock-agent"].get_paginator = throttled
+
+
+def test_destroy_is_blocked_when_a_lookup_fails(kb, fake_aws):
+    kb.apply()
+    throttle_kb_lookups(fake_aws)
+
+    preview = kb.destroy()
+    assert not preview.ready
+    assert any("Rate exceeded" in b for b in preview.blockers)
+    assert isinstance(kb.destroy(confirm=True), Plan)
+    assert fake_aws.services["s3vectors"].buckets and fake_aws.services["iam"].roles
+
+
+def test_destroy_stops_before_deleting_if_a_lookup_fails_after_the_preview(kb, fake_aws):
+    kb.apply()
+    preview = kb.destroy()
+    assert preview.ready
+    throttle_kb_lookups(fake_aws)
+
+    result = preview.apply()
+    assert not result.ok and "Rate exceeded" in result.error
+    assert fake_aws.services["s3vectors"].buckets and fake_aws.services["iam"].roles
+
+
+def test_destroy_keeps_resources_whose_tags_cant_be_read(kb, fake_aws):
+    kb.apply()
+
+    def denied(**_):
+        raise aws_error("AccessDeniedException", "not allowed: ListTagsForResource")
+
+    fake_aws.services["bedrock-agent"].list_tags_for_resource = denied
+    fake_aws.services["s3vectors"].list_tags_for_resource = denied
+
+    preview = kb.destroy()
+    kept = ("Data source", "Bedrock knowledge base", "Vector index", "S3 vector bucket")
+    assert {actions(preview)[t] for t in kept} == {Action.KEEP}
+    assert any("Couldn't read its tags" in item.inspection.warning for item in preview.items)
+    assert {actions(kb.destroy(force=True))[t] for t in kept} == {Action.DELETE}
 
 
 def test_ask_and_status_after_build(kb):

@@ -14,7 +14,7 @@ from botocore.exceptions import ClientError
 
 from ..aws import error_code
 from ..spec import S3Source
-from .base import Action, Ctx, Inspection, Log, Step, is_managed
+from .base import Action, Ctx, Inspection, Log, Step, claimed_by, is_ours, shared_name_conflict, tag_dict
 
 
 class RoleStep(Step):
@@ -107,7 +107,7 @@ class RoleStep(Step):
         return {"Version": "2012-10-17", "Statement": statements}
 
     def inspect(self, ctx: Ctx) -> Inspection:
-        """Use your role, or check ours exists and its policy is up to date."""
+        """Use your role, or check ours exists, belongs to this knowledge base and has up-to-date permissions."""
         if ctx.spec.role_arn:
             ctx.out["role_arn"] = ctx.spec.role_arn
             return Inspection(Action.USE, "your role")
@@ -117,6 +117,10 @@ class RoleStep(Step):
             if error_code(exc) == "NoSuchEntity":
                 return Inspection(Action.CREATE)
             raise
+        # Updating another knowledge base's role would swap its permissions for ours.
+        owner = claimed_by(tag_dict(role.get("Tags", [])), ctx)
+        if owner:
+            return shared_name_conflict(owner, ctx)
         ctx.out["role_arn"] = role["Arn"]
         if self._current_policy(ctx) == self.permissions_policy(ctx):
             return Inspection(Action.EXISTS)
@@ -169,6 +173,6 @@ class RoleStep(Step):
         return "deleted"
 
     def owned(self, ctx: Ctx) -> Optional[bool]:
-        """True if the role carries the kbforge tag."""
+        """True if the role carries kbforge's tags for this knowledge base."""
         role = ctx.aws.client("iam").get_role(RoleName=ctx.names.role)["Role"]
-        return is_managed({t["Key"]: t["Value"] for t in role.get("Tags", [])})
+        return is_ours(tag_dict(role.get("Tags", [])), ctx)

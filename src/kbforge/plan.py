@@ -154,7 +154,9 @@ def _inspect_all(steps: List[Step], ctx: Ctx) -> List[Inspection]:
         try:
             results.append(step.inspect(ctx))
         except Exception as exc:
-            results.append(Inspection(Action.CONFLICT, warning=f"Couldn't check this: {explain_error(exc)}"))
+            results.append(
+                Inspection(Action.CONFLICT, warning=f"Couldn't check this: {explain_error(exc)}", error=True)
+            )
     return results
 
 
@@ -163,20 +165,36 @@ def _item(step: Step, inspection: Inspection, ctx: Ctx) -> PlanItem:
 
 
 def _destroy_decision(step: Step, found: Inspection, ctx: Ctx, force: bool) -> Inspection:
-    """Turn "what exists?" into "what will destroy do?", protecting things we didn't create."""
+    """Turn "what exists?" into "what will destroy do?", protecting things we didn't create.
+
+    When in doubt, keep: a lookup that failed blocks the destroy (later steps would be judged
+    on missing information), and tags we can't read leave the resource alone.
+    """
+    if found.error:
+        return Inspection(
+            Action.CONFLICT,
+            warning=f"{found.warning}\nNothing is deleted while this can't be checked. Try kb.destroy() again "
+            "in a moment, or ask your AWS admin for the read permission named above.",
+        )
     if found.action == Action.CREATE:
         return Inspection(Action.ABSENT, "nothing to delete")
     if found.action == Action.USE:
         return Inspection(Action.KEEP, "your role — left alone")
+    if force:
+        return Inspection(Action.DELETE)
     try:
         owned = step.owned(ctx)
-    except Exception:
-        owned = None
-    if owned is False and not force:
+    except Exception as exc:
         return Inspection(
             Action.KEEP,
-            warning="Not created by kbforge (no managed-by tag), so it's left alone. "
-            "Use destroy(force=True) to delete it anyway.",
+            warning=f"Couldn't read its tags ({explain_error(exc)}), so kbforge can't tell whether it made it. "
+            "It's left alone; use destroy(force=True) to delete it anyway.",
+        )
+    if owned is False:
+        return Inspection(
+            Action.KEEP,
+            warning="kbforge didn't create this for this knowledge base (its tags don't say so), so it's left "
+            "alone. Use destroy(force=True) to delete it anyway.",
         )
     return Inspection(Action.DELETE)
 
@@ -225,11 +243,23 @@ def _run_destroy(plan: Plan) -> ApplyResult:
     ctx = Ctx(plan.spec, plan.aws)
     steps = build_steps(plan.spec)
     found = _inspect_all(steps, ctx)  # forward pass fills ctx.out with ids we need to delete
-    targets = [(s, f) for s, f in reversed(list(zip(steps, found, strict=True))) if s.deletable]
+    # Decide everything before deleting anything: ownership of an untaggable policy is judged by
+    # its collection, which may be gone by the time the policy's turn comes.
+    targets = [
+        (s, _destroy_decision(s, f, ctx, plan.force))
+        for s, f in reversed(list(zip(steps, found, strict=True)))
+        if s.deletable
+    ]
     progress = Progress(f"Deleting {plan.spec.name}", [(s.title, s.resource(ctx)) for s, _ in targets], plan.spec.name)
     started = time.time()
-    for i, (step, inspection) in enumerate(targets):
-        decision = _destroy_decision(step, inspection, ctx, plan.force)
+    blocked = next((i for i, (_, decision) in enumerate(targets) if decision.action == Action.CONFLICT), None)
+    if blocked is not None:
+        step, decision = targets[blocked]
+        progress.fail(blocked, decision.warning)
+        return ApplyResult(
+            False, "destroy", plan.spec, plan.aws.region, ctx.out, decision.warning, step.title, time.time() - started
+        )
+    for i, (step, decision) in enumerate(targets):
         if decision.action != Action.DELETE:
             progress.skip(i, decision.note or "kept")
             continue

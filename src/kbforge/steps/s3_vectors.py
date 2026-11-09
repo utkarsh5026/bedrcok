@@ -11,7 +11,7 @@ from typing import Optional
 from botocore.exceptions import ClientError
 
 from ..aws import error_code
-from .base import Action, Ctx, Inspection, Log, Step, is_managed
+from .base import Action, Ctx, Inspection, Log, Step, claimed_by, is_ours, shared_name_conflict, tags_if_allowed
 
 #: Bedrock stores each chunk's text and metadata next to its vector under these keys.
 #: Marking them "non-filterable" avoids S3 Vectors' 2 KB limit on filterable metadata,
@@ -33,14 +33,20 @@ class VectorBucketStep(Step):
         return "Serverless vector storage. Pay per GB stored and per query, with no cluster to run."
 
     def inspect(self, ctx: Ctx) -> Inspection:
-        """Check whether the vector bucket exists."""
+        """Check whether the vector bucket exists and isn't another knowledge base's."""
+        s3v = ctx.aws.client("s3vectors")
         try:
-            bucket = ctx.aws.client("s3vectors").get_vector_bucket(vectorBucketName=ctx.names.vector_bucket)
+            bucket = s3v.get_vector_bucket(vectorBucketName=ctx.names.vector_bucket)
         except ClientError as exc:
             if error_code(exc) == "NotFoundException":
                 return Inspection(Action.CREATE)
             raise
-        ctx.out["vector_bucket_arn"] = bucket["vectorBucket"]["vectorBucketArn"]
+        arn = bucket["vectorBucket"]["vectorBucketArn"]
+        ctx.out["vector_bucket_arn"] = arn
+        tags = tags_if_allowed(lambda: s3v.list_tags_for_resource(resourceArn=arn).get("tags", {}))
+        owner = claimed_by(tags or {}, ctx)
+        if owner:
+            return shared_name_conflict(owner, ctx)
         return Inspection(Action.EXISTS)
 
     def create(self, ctx: Ctx, log: Log, inspection: Inspection) -> str:
@@ -60,12 +66,12 @@ class VectorBucketStep(Step):
         return "deleted"
 
     def owned(self, ctx: Ctx) -> Optional[bool]:
-        """True if the bucket carries the kbforge tag."""
+        """True if the bucket carries kbforge's tags for this knowledge base."""
         arn = ctx.out.get("vector_bucket_arn")
         if not arn:
             return None
         tags = ctx.aws.client("s3vectors").list_tags_for_resource(resourceArn=arn).get("tags", {})
-        return is_managed(tags)
+        return is_ours(tags, ctx)
 
 
 class VectorIndexStep(Step):
@@ -124,3 +130,7 @@ class VectorIndexStep(Step):
             vectorBucketName=ctx.names.vector_bucket, indexName=ctx.names.vector_index
         )
         return "deleted"
+
+    def owned(self, ctx: Ctx) -> Optional[bool]:
+        """An index can't be tagged, so it counts as ours when the bucket around it is."""
+        return VectorBucketStep().owned(ctx)
