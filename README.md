@@ -119,7 +119,7 @@ kbforge apply examples/kb.yaml
 2. **Check permissions.** Your notebook role needs the permissions in [`docs/notebook-role-policy.json`](docs/notebook-role-policy.json).
    > [!TIP]
    > If IAM is locked down in your account, pass an existing Bedrock role as `role_arn=` and kbforge won't try to create one.
-3. **Read the guide.** The [guide](https://utkarsh5026.github.io/bedrcok/) covers every option, how to choose settings, and troubleshooting.
+3. **Read the guide.** The [guide](https://utkarsh5026.github.io/bedrcok/) has a 90-second video tour; the [reference](https://utkarsh5026.github.io/bedrcok/reference.html) covers every option, how to choose settings, and troubleshooting.
 
 Once it's built, the rest of the lifecycle is one call each:
 

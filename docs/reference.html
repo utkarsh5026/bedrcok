@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reference · kbforge</title>
+<meta name="description" content="Every kbforge option, how to choose settings, the YAML format and CLI, permissions, troubleshooting and FAQ.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%231b1b1a'/><text x='16' y='21' font-family='monospace' font-weight='700' font-size='14' fill='%23f08a4b' text-anchor='middle'>kb</text></svg>">
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="inner">
+    <a class="brand" href="./"><span class="name">kb<span>forge</span></span></a>
+    <nav>
+      <a href="./">Guide</a>
+      <a class="here" href="reference.html">Reference</a>
+      <a class="opt" href="#troubleshooting">Help</a>
+      <a href="https://github.com/utkarsh5026/bedrcok">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="toc" aria-label="Contents">
+    <div class="label">Settings</div>
+    <a href="#options">Options</a>
+    <a href="#choosing">Choosing settings</a>
+    <div class="label">Automation</div>
+    <a href="#yaml">YAML &amp; the CLI</a>
+    <div class="label">Under the hood</div>
+    <a href="#resources">What gets created</a>
+    <a href="#permissions">Permissions</a>
+    <div class="label">Help</div>
+    <a href="#troubleshooting">Troubleshooting</a>
+    <a href="#faq">FAQ</a>
+    <div class="label">New here?</div>
+    <a href="./">&larr; Back to the guide</a>
+  </aside>
+
+  <main>
+    <h1>Reference</h1>
+    <p class="sub">The <a href="./">guide</a> gets you from zero to a working knowledge base. This page is for when you want to change a setting, automate it, or something went wrong.</p>
+
+    <h2 id="options">Options</h2>
+    <p class="sub">Everything <code>KnowledgeBase(...)</code> accepts. The same keys work in YAML.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Option</th><th>Default</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>name</code></td><td>required</td><td>Knowledge base name. Letters, digits, <code>-</code> and <code>_</code>. All other resource names are derived from it.</td></tr>
+        <tr><td><code>source</code></td><td>required</td><td><code>"s3://bucket/prefix/"</code>, <code>"https://site"</code>, <code>S3Source(...)</code> or <code>WebSource([...], max_pages=500)</code>.</td></tr>
+        <tr><td><code>embedding</code></td><td><code>titan-v2</code></td><td><code>titan-v2</code>, <code>cohere-en</code>, <code>cohere-multi</code>, <code>titan-v1</code>. Fixed once the KB exists.</td></tr>
+        <tr><td><code>dimensions</code></td><td>model default</td><td>Vector size. Titan v2 supports 256, 512 or 1024.</td></tr>
+        <tr><td><code>vector_store</code></td><td><code>s3_vectors</code></td><td><code>s3_vectors</code> or <code>opensearch_serverless</code> (needs <code>pip install "kbforge[opensearch]"</code>).</td></tr>
+        <tr><td><code>chunking</code></td><td><code>fixed</code></td><td><code>fixed</code>, <code>hierarchical</code>, <code>semantic</code>, <code>none</code>, or <code>Chunking.fixed(500, 10)</code> for custom sizes. Fixed once the data source exists.</td></tr>
+        <tr><td><code>role_arn</code></td><td>create one</td><td>Reuse an existing Bedrock role instead of creating one. It's never deleted by kbforge.</td></tr>
+        <tr><td><code>permissions_boundary</code></td><td>none</td><td>Attached to the role kbforge creates, if your organisation requires one.</td></tr>
+        <tr><td><code>region</code></td><td>session default</td><td>AWS region for everything. Must match your bucket's region.</td></tr>
+        <tr><td><code>description</code></td><td>generated</td><td>Shown in the Bedrock console.</td></tr>
+        <tr><td><code>tags</code></td><td><code>{}</code></td><td>Added to every resource, alongside <code>managed-by: kbforge</code>.</td></tr>
+        <tr><td><code>sync</code></td><td><code>True</code></td><td>Run the first ingestion as part of <code>apply()</code>.</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3 id="choosing">Choosing settings</h3>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Decision</th><th>Start with</th><th>Switch when</th></tr></thead>
+      <tbody>
+        <tr><td>Vector store</td><td><b>S3 Vectors</b>: serverless, no minimum cost, nothing to manage.</td><td>You need hybrid (keyword + vector) search or very low-latency, high-QPS queries. OpenSearch Serverless bills for at least a couple of OCUs while it exists.</td></tr>
+        <tr><td>Embedding model</td><td><b>Titan v2, 1024d</b>: cheap, multilingual, long input.</td><td>English-only corpus where retrieval quality matters most: try <code>cohere-en</code>. Many languages mixed together: <code>cohere-multi</code>.</td></tr>
+        <tr><td>Chunking</td><td><b>Fixed, 300 tokens, 20% overlap.</b></td><td>Long structured documents (policies, manuals): <code>hierarchical</code>. Topic changes don't line up with paragraphs: <code>semantic</code> (slower and costs more per sync). Already-small files such as FAQs: <code>none</code>.</td></tr>
+      </tbody>
+    </table></div>
+    <div class="callout">Embedding model, vector store and chunking can't be changed in place. To try different settings, give the knowledge base a new name (e.g. <code>hr-policies-v2</code>), compare with <code>ask()</code>, then <code>destroy()</code> the one you don't keep.</div>
+
+    <h2 id="yaml">YAML &amp; the CLI</h2>
+    <p>Keep definitions in git and build them from a terminal or CI with the same plan → apply flow. From a notebook, <code>kb.save("kb.yaml")</code> writes the file and <code>KnowledgeBase.from_yaml("kb.yaml")</code> reads it back.</p>
+<pre><code><span class="c"># kb.yaml</span>
+name: hr-policies
+region: us-east-1
+source:
+  s3: s3://my-company-docs/hr/
+embedding: titan-v2
+vector_store: s3_vectors
+chunking:
+  strategy: fixed
+  max_tokens: 300
+  overlap_percent: 20
+tags:
+  team: people-ops</code></pre>
+<pre><code>kbforge init                      <span class="c"># write a starter kb.yaml</span>
+kbforge plan kb.yaml              <span class="c"># checks + what would be built</span>
+kbforge apply kb.yaml             <span class="c"># asks before changing anything (-y to skip)</span>
+kbforge ask kb.yaml "question"
+kbforge sync kb.yaml
+kbforge status kb.yaml
+kbforge destroy kb.yaml
+kbforge models                    <span class="c"># supported embedding models</span></code></pre>
+    <figure class="narrow">
+      <a href="assets/screens/cli-plan.png"><img src="assets/screens/cli-plan.png" alt="Terminal output of kbforge plan: preflight checks with ticks and a colour-coded list of steps" loading="lazy" width="1760" height="1114"></a>
+    </figure>
+    <p><code>kbforge plan</code> exits with code 2 when the plan is blocked, so CI can stop early.</p>
+
+    <h2 id="resources">What gets created</h2>
+    <p class="sub">For a knowledge base named <code>hr-policies</code> using S3 Vectors:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Resource</th><th>Name</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>S3 vector bucket</td><td><code>kbforge-hr-policies</code></td><td>Holds the index.</td></tr>
+        <tr><td>Vector index</td><td><code>hr-policies-index</code></td><td>float32, cosine. Bedrock's text/metadata keys are marked non-filterable to avoid the 2 KB metadata limit.</td></tr>
+        <tr><td>IAM role</td><td><code>AmazonBedrockExecutionRoleForKnowledgeBase_kbf-hr-policies</code></td><td>Trusted only by Bedrock in your account. Can invoke the one embedding model, read the source bucket and use this index.</td></tr>
+        <tr><td>Knowledge base</td><td><code>hr-policies</code></td><td></td></tr>
+        <tr><td>Data source</td><td><code>hr-policies-source</code></td><td>Deletion policy <code>DELETE</code>: removing it also removes its vectors.</td></tr>
+      </tbody>
+    </table></div>
+    <p>With OpenSearch Serverless, the vector bucket and index are replaced by encryption and network policies, a collection, a data access policy (for the Bedrock role and you) and a k-NN index. Names are deterministic, so running the same definition twice finds the same resources and there's no state file to lose.</p>
+
+    <h2 id="permissions">Permissions for your notebook role</h2>
+    <p>The SageMaker execution role (or whoever runs kbforge) needs the policy below. Replace <code>YOUR-DOCUMENTS-BUCKET</code>. The IAM statements are scoped to roles whose names start with <code>AmazonBedrockExecutionRoleForKnowledgeBase_kbf-</code>, so kbforge can't touch any other role.</p>
+    <details>
+      <summary>Show the policy (<a href="notebook-role-policy.json" download>download JSON</a>)</summary>
+      <pre><code id="policy">Loading…</code></pre>
+    </details>
+    <p>For OpenSearch Serverless also allow <code>aoss:CreateCollection</code>, <code>aoss:BatchGetCollection</code>, <code>aoss:DeleteCollection</code>, <code>aoss:CreateSecurityPolicy</code>, <code>aoss:GetSecurityPolicy</code>, <code>aoss:DeleteSecurityPolicy</code>, <code>aoss:CreateAccessPolicy</code>, <code>aoss:GetAccessPolicy</code>, <code>aoss:UpdateAccessPolicy</code>, <code>aoss:DeleteAccessPolicy</code>, <code>aoss:APIAccessAll</code> and <code>aoss:TagResource</code>.</p>
+    <div class="callout"><b>IAM locked down?</b> Have an admin create a role that trusts <code>bedrock.amazonaws.com</code>, then pass <code>role_arn=</code>. The plan shows the exact permissions that role needs in the "IAM service role" fold-out, and you can drop the IAM statements above.</div>
+
+    <h2 id="troubleshooting">Troubleshooting</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>You see</th><th>What it means</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr><td>Embedding model ✕ "can't invoke this model"</td><td>Model access isn't enabled for the account, or your role lacks <code>bedrock:InvokeModel</code>.</td><td>Bedrock console → Model access, or ask your admin. Try another region or model.</td></tr>
+        <tr><td>Source bucket ✕ "doesn't exist"</td><td>Typo in the bucket name, or it's in another account.</td><td>Check the <code>s3://</code> path.</td></tr>
+        <tr><td>Source bucket region ⚠</td><td>Bucket and knowledge base are in different regions. Bedrock requires them to match.</td><td>Pass <code>region="&lt;bucket region&gt;"</code>.</td></tr>
+        <tr><td>Source documents ⚠ "types Bedrock will skip"</td><td>Images, zips and similar files are ignored.</td><td>Nothing to do, or convert them. Files over 50 MB fail and should be split.</td></tr>
+        <tr><td>Bedrock knowledge base: <span class="badge" style="--c:var(--red)">blocked</span></td><td>A KB with this name exists with a different model or vector store.</td><td>Pick a new name, or <code>destroy()</code> the old one.</td></tr>
+        <tr><td>"Your notebook's role is missing a permission"</td><td>An AWS call was denied; the message names the action.</td><td>Add it (see <a href="#permissions">Permissions</a>), then <code>kb.apply()</code> again.</td></tr>
+        <tr><td>"Bedrock can't see the new role/index yet — retrying"</td><td>Normal: new IAM roles take a few seconds to reach Bedrock.</td><td>Wait. kbforge retries for up to two minutes.</td></tr>
+        <tr><td>Sync finished with "N failed"</td><td>Some documents couldn't be parsed.</td><td>Check <code>kb.status()</code> and the ingestion job in the Bedrock console for per-file reasons.</td></tr>
+      </tbody>
+    </table></div>
+
+    <h2 id="faq">FAQ</h2>
+    <details><summary>Does <code>plan()</code> cost anything or change anything?</summary><p>It changes nothing. The only billable call is one tiny embedding of the word "hello", which proves the model works for you. It costs a fraction of a cent.</p></details>
+    <details><summary>Can I adopt a knowledge base someone created by hand?</summary><p>If you use the same name, kbforge finds it and shows it as <span class="badge" style="--c:var(--muted)">exists</span>, or as <span class="badge" style="--c:var(--red)">blocked</span> if its settings differ. <code>destroy()</code> leaves it alone because it has no kbforge tag.</p></details>
+    <details><summary>Where's the state file?</summary><p>There isn't one. Every resource name is derived from the knowledge base name, so kbforge always looks the resources up live in AWS. Two people running the same YAML see the same plan.</p></details>
+    <details><summary>Can my application query it without kbforge?</summary><p>Yes. It's a normal Bedrock knowledge base. Use <code>bedrock-agent-runtime</code>'s <code>retrieve</code> or <code>retrieve_and_generate</code> with the knowledge base ID from the "ready" card.</p></details>
+    <details><summary>How were the screenshots and the tour made?</summary><p>By running a real JupyterLab against a simulated AWS account (the same fake the test-suite uses), so the IDs are made up and builds finish in seconds. Real builds take a few minutes, mostly for the first sync. Regenerate the screenshots with <code>make docs-screens</code>. The tour on the guide page animates those same screenshots; <code>make docs-video</code> exports it as an MP4.</p></details>
+  </main>
+</div>
+
+<footer>kbforge is open source under Apache-2.0 · <a href="https://github.com/utkarsh5026/bedrcok">github.com/utkarsh5026/bedrcok</a></footer>
+
+<script src="assets/site.js" defer></script>
+</body>
+</html>

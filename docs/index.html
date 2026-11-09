@@ -3,428 +3,243 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>kbforge — Bedrock knowledge bases from a notebook</title>
-<meta name="description" content="Go from documents in S3 to an Amazon Bedrock Knowledge Base in a few SageMaker notebook cells, with a readable plan before anything is created.">
-<style>
-:root {
-  --bg: #ffffff; --bg-soft: #f6f8fa; --bg-code: #f3f4f6; --fg: #1f2328; --muted: #59636e;
-  --border: #d1d9e0; --accent: #0969da; --accent-soft: #ddf4ff; --green: #1a7f37; --amber: #9a6700; --red: #cf222e;
-  --shadow: 0 1px 2px rgba(31,35,40,.06), 0 8px 24px rgba(31,35,40,.08);
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0d1117; --bg-soft: #151b23; --bg-code: #161b22; --fg: #e6edf3; --muted: #9198a1;
-    --border: #30363d; --accent: #4493f8; --accent-soft: #121d2f; --green: #3fb950; --amber: #d29922; --red: #f85149;
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
-  }
-}
-* { box-sizing: border-box; }
-html { scroll-behavior: smooth; scroll-padding-top: 72px; }
-body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.65 var(--sans); -webkit-font-smoothing: antialiased; }
-a { color: var(--accent); text-decoration: none; }
-a:hover { text-decoration: underline; }
-code { overflow-wrap: anywhere; font-family: var(--mono); font-size: .88em; background: var(--bg-code); padding: .12em .38em; border-radius: 5px; border: 1px solid var(--border); }
-pre { position: relative; margin: 14px 0 20px; padding: 14px 16px; background: var(--bg-code); border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; font: 13.5px/1.55 var(--mono); }
-pre code { background: none; border: 0; padding: 0; font-size: inherit; overflow-wrap: normal; }
-.copy { position: absolute; top: 8px; right: 8px; font: 12px var(--sans); padding: 3px 9px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--muted); cursor: pointer; opacity: 0; transition: opacity .15s; }
-pre:hover .copy, .copy:focus { opacity: 1; }
-.c { color: var(--muted); }
-
-header.top { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
-header.top .inner { max-width: 1200px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
-.brand { font-weight: 700; font-size: 17px; color: var(--fg); letter-spacing: -.01em; }
-.brand span { color: var(--accent); }
-header.top nav { margin-left: auto; display: flex; gap: 18px; font-size: 14px; }
-header.top nav a { color: var(--muted); }
-
-.layout { max-width: 1200px; margin: 0 auto; padding: 0 24px; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; }
-aside.toc { position: sticky; top: 72px; align-self: start; padding: 28px 0; max-height: calc(100vh - 72px); overflow-y: auto; font-size: 14px; }
-aside.toc .label { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 18px 0 6px; }
-aside.toc a { display: block; padding: 4px 10px; margin-left: -10px; border-radius: 6px; color: var(--muted); }
-aside.toc a:hover { background: var(--bg-soft); color: var(--fg); text-decoration: none; }
-aside.toc a.active { color: var(--accent); background: var(--accent-soft); }
-main { padding: 8px 0 80px; min-width: 0; max-width: 860px; }
-
-.hero { padding: 48px 0 28px; }
-.eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
-.hero h1 { font-size: clamp(32px, 4.4vw, 46px); line-height: 1.12; letter-spacing: -.025em; margin: 10px 0 16px; }
-.hero p.lead { font-size: 19px; color: var(--muted); margin: 0 0 24px; max-width: 680px; }
-.buttons { display: flex; flex-wrap: wrap; gap: 10px; }
-.btn { display: inline-block; padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 15px; border: 1px solid var(--border); color: var(--fg); background: var(--bg); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.btn:hover { text-decoration: none; filter: brightness(1.05); }
-
-h2 { font-size: 28px; letter-spacing: -.02em; margin: 64px 0 8px; padding-top: 8px; border-top: 1px solid var(--border); padding-top: 40px; }
-h3 { font-size: 20px; margin: 36px 0 6px; letter-spacing: -.01em; }
-p { margin: 10px 0; }
-.sub { color: var(--muted); margin-top: 0; }
-
-figure { margin: 18px 0 28px; }
-figure a { display: block; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); background: #fff; }
-figure img { display: block; width: 100%; height: auto; }
-figure.narrow { max-width: 720px; }
-figcaption { font-size: 14px; color: var(--muted); margin-top: 10px; }
-
-.why { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 24px 0 8px; }
-.why div { padding: 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-soft); }
-.why b { display: block; margin-bottom: 4px; }
-.why span { color: var(--muted); font-size: 14.5px; }
-
-.steps-list { counter-reset: s; list-style: none; padding: 0; margin: 16px 0; }
-.steps-list > li { counter-increment: s; position: relative; padding-left: 44px; margin: 0 0 14px; }
-.steps-list > li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 28px; height: 28px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-weight: 700; font-size: 14px; display: flex; align-items: center; justify-content: center; }
-
-.callout { padding: 12px 16px; border-radius: 10px; border: 1px solid var(--border); border-left: 4px solid var(--accent); background: var(--bg-soft); margin: 18px 0; font-size: 15px; }
-.callout.warn { border-left-color: var(--amber); }
-.callout b { color: var(--fg); }
-
-.table-wrap { overflow-x: auto; margin: 14px 0 22px; border: 1px solid var(--border); border-radius: 10px; }
-table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
-th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
-th { background: var(--bg-soft); font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-tr:last-child td { border-bottom: 0; }
-td code { white-space: nowrap; }
-
-.legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; margin: 14px 0; font-size: 14.5px; }
-.legend div { display: flex; gap: 10px; align-items: baseline; }
-.badge { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 1px 7px; border-radius: 5px; color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 40%, transparent); background: color-mix(in srgb, var(--c) 10%, transparent); white-space: nowrap; }
-
-details { border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; margin: 12px 0; background: var(--bg-soft); }
-details summary { cursor: pointer; font-weight: 600; }
-details[open] summary { margin-bottom: 8px; }
-details pre { background: var(--bg); }
-
-footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 14px; padding: 28px 24px 48px; text-align: center; }
-
-@media (max-width: 960px) {
-  .layout { grid-template-columns: minmax(0, 1fr); padding: 0 16px; }
-  aside.toc { display: none; }
-  header.top .inner { padding: 12px 16px; }
-  header.top nav { gap: 12px; }
-  .why { grid-template-columns: minmax(0, 1fr); }
-}
-@media (max-width: 520px) { header.top nav a.opt { display: none; } }
-</style>
+<title>kbforge · Bedrock knowledge bases from a notebook</title>
+<meta name="description" content="Turn documents in S3 into an Amazon Bedrock Knowledge Base in four notebook cells, with a readable plan before anything is created.">
+<meta property="og:title" content="kbforge · Bedrock knowledge bases from a notebook">
+<meta property="og:description" content="Describe it, read the plan, build it, ask it. Four notebook cells, no AWS expertise needed.">
+<meta property="og:image" content="assets/screens/jupyterlab.png">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%231b1b1a'/><text x='16' y='21' font-family='monospace' font-weight='700' font-size='14' fill='%23f08a4b' text-anchor='middle'>kb</text></svg>">
+<link rel="stylesheet" href="assets/site.css">
+<link rel="stylesheet" href="assets/demo.css">
+<script>
+  // Old links pointed at sections that now live on the reference page; send them there.
+  (function () {
+    var moved = ["options", "choosing", "yaml", "resources", "permissions", "troubleshooting", "faq"];
+    if (moved.indexOf(location.hash.slice(1)) >= 0) location.replace("reference.html" + location.hash);
+  })();
+</script>
 </head>
 <body>
 
 <header class="top">
   <div class="inner">
-    <a class="brand" href="#">kb<span>forge</span></a>
+    <a class="brand" href="./"><span class="name">kb<span>forge</span></span></a>
     <nav>
-      <a href="#quickstart">Quickstart</a>
-      <a class="opt" href="#options">Options</a>
-      <a class="opt" href="#troubleshooting">Troubleshooting</a>
+      <a class="here" href="./">Guide</a>
+      <a href="reference.html">Reference</a>
+      <a class="opt" href="reference.html#troubleshooting">Help</a>
       <a href="https://github.com/utkarsh5026/bedrcok">GitHub</a>
     </nav>
   </div>
 </header>
 
-<div class="layout">
-  <aside class="toc" aria-label="Contents">
-    <div class="label">Start</div>
-    <a href="#why">Why kbforge</a>
-    <a href="#before">Before you start</a>
-    <a href="#install">Install</a>
-    <div class="label">Walkthrough</div>
-    <a href="#quickstart">1 · Describe</a>
-    <a href="#plan">2 · Read the plan</a>
-    <a href="#blocked">When it's blocked</a>
-    <a href="#apply">3 · Build</a>
-    <a href="#ask">4 · Try it</a>
-    <a href="#later">Sync, status &amp; clean up</a>
-    <a href="#wizard">The wizard</a>
-    <div class="label">Reference</div>
-    <a href="#options">Options</a>
-    <a href="#choosing">Choosing settings</a>
-    <a href="#yaml">YAML &amp; the CLI</a>
-    <a href="#resources">What gets created</a>
-    <a href="#permissions">Permissions</a>
-    <a href="#troubleshooting">Troubleshooting</a>
-    <a href="#faq">FAQ</a>
-  </aside>
-
-  <main>
-    <section class="hero">
-      <div class="eyebrow">For SageMaker &amp; Jupyter notebooks</div>
-      <h1>From documents to a Bedrock knowledge base in four cells</h1>
-      <p class="lead">kbforge replaces the "run these twenty cells and hope" notebook. You describe the knowledge base you want, read a plan of exactly what will be created, and then build it with live progress.</p>
-      <div class="buttons">
-        <a class="btn primary" href="#quickstart">Get started</a>
-        <a class="btn" href="https://github.com/utkarsh5026/bedrcok/blob/main/notebooks/getting_started.ipynb">Open the starter notebook</a>
-      </div>
-      <figure>
-        <a href="assets/screens/jupyterlab.png"><img src="assets/screens/jupyterlab.png" alt="JupyterLab showing a kbforge plan card with the data flow, preflight checks and the list of resources to build" width="2720" height="1800"></a>
-        <figcaption>A plan, rendered right in the notebook. Nothing in AWS has changed at this point.</figcaption>
-      </figure>
-    </section>
-
-    <h2 id="why">Why kbforge</h2>
-    <div class="why">
-      <div><b>See it before it exists</b><span>Every AWS resource is listed with its name, what it's for, and whether it'll be created, reused or updated.</span></div>
-      <div><b>Problems caught up front</b><span>Model access, a missing or empty bucket, files Bedrock can't read and wrong regions all show up before anything is built.</span></div>
-      <div><b>Safe to re-run</b><span>If a build fails halfway, fix the cause and run it again. Finished steps are detected and skipped.</span></div>
-    </div>
-
-    <h2 id="before">Before you start</h2>
-    <p class="sub">You need two things:</p>
-    <ul>
-      <li><b>Your documents</b> in an S3 bucket, in the same region as the knowledge base. PDF, Word, Excel, CSV, HTML, Markdown and plain text all work. Or a public website you're allowed to crawl.</li>
-      <li><b>A notebook role that can build things.</b> Your SageMaker execution role needs access to Bedrock, S3 Vectors and IAM. The exact policy is under <a href="#permissions">Permissions</a>. If IAM is locked down, ask your admin for a Bedrock role and pass it as <code>role_arn=</code>.</li>
-    </ul>
-
-    <h2 id="install">Install</h2>
-    <p>Run this in a notebook cell, then restart the kernel if pip asks you to:</p>
+<section class="hero">
+  <div class="wrap">
+    <h1>Build an Amazon Bedrock knowledge base from a notebook.</h1>
+    <p class="lead">Describe what you want in one line of Python. kbforge checks your setup, shows you exactly what it will create, and builds it only when you say so.</p>
 <pre><code>%pip install -q "kbforge[notebook] @ git+https://github.com/utkarsh5026/bedrcok.git"</code></pre>
-    <p>Then show the getting-started card. It's the whole journey on one screen:</p>
-<pre><code>import kbforge
-kbforge.guide()</code></pre>
-    <figure class="narrow">
-      <a href="assets/screens/guide.png"><img src="assets/screens/guide.png" alt="The kbforge getting-started card listing four steps with code" loading="lazy" width="2524" height="1570"></a>
-    </figure>
-    <div class="callout">The quickest start is the <a href="https://github.com/utkarsh5026/bedrcok/blob/main/notebooks/getting_started.ipynb">starter notebook</a>. Upload it to SageMaker and run it top to bottom.</div>
 
-    <h2 id="quickstart">1 · Describe your knowledge base</h2>
-    <p class="sub">A name and where the documents live. Everything else has a sensible default.</p>
-<pre><code>from kbforge import KnowledgeBase
+    <div class="player" id="tour">
+      <div class="screen" data-demo="autoplay"></div>
+      <div class="controls"></div>
+      <div class="chapters"></div>
+      <p class="note">A 90-second tour, recorded from real kbforge output against a simulated AWS account. Click the video to pause. <a href="assets/kbforge-tour.mp4" download>Download as MP4</a> · <a href="demo.html">Full screen</a></p>
+    </div>
+  </div>
+</section>
 
-kb = KnowledgeBase("hr-policies", source="s3://my-company-docs/hr/")
-kb</code></pre>
-    <p>Creating the object doesn't call AWS. When displayed, it shows the data flow it's going to set up:</p>
-    <figure>
-      <a href="assets/screens/describe.png"><img src="assets/screens/describe.png" alt="A card showing the data flow: source, chunking, embeddings, vector store, knowledge base" loading="lazy" width="2524" height="906"></a>
-    </figure>
+<section class="block" id="what">
+  <div class="wrap">
+    <h2>What it builds</h2>
+    <p class="sub">A knowledge base is a search index over your own documents that matches on meaning rather than exact words. Chat assistants use one to find the right passages before they answer. Getting there takes five steps, and five AWS resources:</p>
+    <div class="pipeline">
+      <div><b>Documents</b><span>PDF, Word, Excel, HTML, Markdown in an S3 bucket</span></div>
+      <div><b>Chunks</b><span>Each file split into short passages</span></div>
+      <div><b>Embeddings</b><span>Each passage turned into a vector by a Bedrock model</span></div>
+      <div><b>Vector store</b><span>Vectors stored so similar meanings are found quickly</span></div>
+      <div><b>Retrieval</b><span>A question returns the closest passages</span></div>
+    </div>
+    <p class="measure">Wiring that up by hand means an IAM role with the right policy, a vector bucket and index, the knowledge base, a data source, and an ingestion job, each with its own waiting and failure modes. kbforge does it in order, explains any error in plain English, and can be safely re-run.</p>
+  </div>
+</section>
 
-    <h2 id="plan">2 · Read the plan</h2>
-<pre><code>kb.plan()</code></pre>
-    <p><code>plan()</code> is read-only, so run it as often as you like. It does two things:</p>
-    <ol class="steps-list">
-      <li><b>Preflight checks.</b> Are your credentials working? Does the embedding model actually respond for you? What's in the bucket, and can Bedrock read it? The bar shows your file types; anything Bedrock will skip is marked.</li>
-      <li><b>What will be built.</b> One row per AWS resource, in order, with its exact name and a badge saying what will happen. Fold-outs show details such as the IAM policy that will be attached.</li>
+<section class="block" id="start">
+  <div class="wrap">
+    <h2>Before you start</h2>
+    <div class="cols">
+      <div><h3>Documents in S3</h3><p>In the region you'll build in. PDF, Word, Excel, CSV, HTML, Markdown and plain text all work. A public website can be crawled instead.</p></div>
+      <div><h3>A role that can build</h3><p>Your SageMaker role needs access to Bedrock, S3 Vectors and IAM: copy the <a href="reference.html#permissions">ready-made policy</a>. If IAM is locked down, ask an admin for a Bedrock role and pass it as <code>role_arn=</code>.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="block" id="cells">
+  <div class="wrap">
+    <h2>Four cells</h2>
+    <p class="sub">After installing, this is the whole thing. Each line is explained below.</p>
+<pre><code><span class="k">from</span> kbforge <span class="k">import</span> KnowledgeBase
+
+kb = KnowledgeBase(<span class="s">"hr-policies"</span>, source=<span class="s">"s3://my-company-docs/hr/"</span>)
+kb.plan()
+kb.apply()
+kb.ask(<span class="s">"How many weeks of parental leave do we get?"</span>)</code></pre>
+    <ol class="cells">
+      <li><a href="#describe">Describe</a><span>A name and a source. No AWS calls yet.</span></li>
+      <li><a href="#plan">Plan</a><span>Checks and a list of what will be created. Changes nothing.</span></li>
+      <li><a href="#build">Build</a><span>Creates everything, with live progress.</span></li>
+      <li><a href="#ask">Ask</a><span>Shows which passages come back for a question.</span></li>
     </ol>
-    <figure>
-      <a href="assets/screens/plan.png"><img src="assets/screens/plan.png" alt="Full plan card: summary, data flow, four preflight checks and six numbered steps with CREATE and RUN badges" loading="lazy" width="2524" height="2470"></a>
-      <figcaption>A plan for a fresh account: five resources to create, then the first sync.</figcaption>
-    </figure>
-    <p>What the badges mean:</p>
-    <div class="legend">
-      <div><span class="badge" style="--c:var(--green)">create</span> will be made</div>
-      <div><span class="badge" style="--c:var(--muted)">exists</span> already there and correct</div>
-      <div><span class="badge" style="--c:var(--amber)">update</span> exists, will be adjusted</div>
-      <div><span class="badge" style="--c:var(--accent)">run</span> an action, such as a sync</div>
-      <div><span class="badge" style="--c:var(--muted)">use yours</span> a role you supplied</div>
-      <div><span class="badge" style="--c:var(--red)">blocked</span> must be fixed first</div>
+  </div>
+</section>
+
+<section class="block" id="walkthrough">
+  <div class="wrap">
+    <h2>What each step shows</h2>
+    <p class="sub">Every call draws a card under the cell. Click a screenshot to open it full size.</p>
+
+    <div class="row" id="describe">
+      <div class="text">
+        <div class="num">Step 1</div>
+        <h3>Describe what you want</h3>
+<pre><code>kb = KnowledgeBase(
+    <span class="s">"hr-policies"</span>,
+    source=<span class="s">"s3://my-company-docs/hr/"</span>,
+)
+kb</code></pre>
+        <p>Give it a <b>name</b> and a <b>source</b>. Everything else (the AI model, the storage, how files are split) has a sensible default you can <a href="reference.html#options">change later</a>.</p>
+        <p>This doesn't touch AWS. It just shows the pipeline it's going to set up.</p>
+      </div>
+      <figure class="shot"><a href="assets/screens/describe.png"><img src="assets/screens/describe.png" alt="A card showing the data flow: source, chunking, embeddings, vector store, knowledge base" loading="lazy" width="2524" height="906"></a></figure>
     </div>
 
-    <h3 id="blocked">When the plan is blocked</h3>
-    <p>If a check fails, the plan says so in red and <code>apply()</code> refuses to start. Nothing is half-built. In this example the bucket name has a typo:</p>
-    <figure>
-      <a href="assets/screens/blocked.png"><img src="assets/screens/blocked.png" alt="A plan with a red Blocked banner: the source bucket finanse-reports doesn't exist" loading="lazy" width="2524" height="2522"></a>
-    </figure>
-    <p>Fix the cause, run <code>kb.plan()</code> again, and carry on. Common blockers and their fixes are under <a href="#troubleshooting">Troubleshooting</a>.</p>
+    <div class="row" id="plan">
+      <div class="text">
+        <div class="num">Step 2</div>
+        <h3>Read the plan</h3>
+<pre><code>kb.plan()</code></pre>
+        <p>Think of it as a <b>preview</b>. It's read-only, so run it as often as you like. It checks your credentials, that the AI model works for you, and what's in your bucket. Then it lists <b>every AWS resource</b> it would create, by name.</p>
+        <div class="legend">
+          <div><span class="badge" style="--c:var(--green)">create</span> will be made</div>
+          <div><span class="badge" style="--c:var(--muted)">exists</span> already there</div>
+          <div><span class="badge" style="--c:var(--amber)">update</span> will be adjusted</div>
+          <div><span class="badge" style="--c:var(--red)">blocked</span> fix this first</div>
+        </div>
+      </div>
+      <figure class="shot tall"><a href="assets/screens/plan.png"><img src="assets/screens/plan.png" alt="Full plan card: summary, data flow, four preflight checks and six numbered steps with CREATE and RUN badges" loading="lazy" width="2524" height="2470"></a></figure>
+    </div>
 
-    <h2 id="apply">3 · Build it</h2>
+    <div class="row" id="blocked">
+      <div class="text">
+        <div class="num">If something's wrong</div>
+        <h3>Problems are caught before anything is built</h3>
+        <p>A typo in the bucket name, a model you don't have access to, the wrong region: the plan turns <b>red</b>, says what to do, and <code>apply()</code> refuses to start. Nothing is ever half-built.</p>
+        <p>Fix it, run <code>kb.plan()</code> again, carry on. Common fixes are on the <a href="reference.html#troubleshooting">help page</a>.</p>
+      </div>
+      <figure class="shot tall"><a href="assets/screens/blocked.png"><img src="assets/screens/blocked.png" alt="A plan with a red Blocked banner: the source bucket finanse-reports doesn't exist" loading="lazy" width="2524" height="2522"></a></figure>
+    </div>
+
+    <div class="row" id="build">
+      <div class="text">
+        <div class="num">Step 3</div>
+        <h3>Build it</h3>
 <pre><code>kb.apply()</code></pre>
-    <p>The card updates in place while it works. Long waits, like a new collection or the first ingestion, show what's happening instead of leaving the cell looking frozen:</p>
-    <figure>
-      <a href="assets/screens/progress.png"><img src="assets/screens/progress.png" alt="Progress card mid-run: five steps done with timings, the ingestion step spinning with a live status line" loading="lazy" width="2360" height="1000"></a>
-      <figcaption>Mid-run: the first sync is in progress, with a live document count.</figcaption>
-    </figure>
-    <p>When it finishes, you get the IDs and the code to use the knowledge base from any application:</p>
-    <figure>
-      <a href="assets/screens/apply.png"><img src="assets/screens/apply.png" alt="Finished build: all six steps ticked, then a Ready card with the knowledge base ID, data source ID and example code" loading="lazy" width="2524" height="1922"></a>
-    </figure>
-    <div class="callout warn"><b>If a step fails</b>, the card stops at that step and explains the error in plain English, such as a missing permission or a quota. Fix it and run <code>kb.apply()</code> again. Anything already created is reused.</div>
+        <p>The card <b>updates live</b> as each piece is created, so the cell never looks frozen. A fresh build takes a few minutes, mostly for the first sync of your documents.</p>
+        <p>At the end you get a <b>Ready</b> card with the IDs and the code your applications need.</p>
+        <div class="callout warn"><b>Stopped halfway?</b> The card explains the error in plain English. Fix it and run <code>kb.apply()</code> again: finished steps are skipped.</div>
+      </div>
+      <div>
+        <figure class="shot"><a href="assets/screens/progress.png"><img src="assets/screens/progress.png" alt="Progress card mid-run: five steps done with timings, the ingestion step spinning with a live status line" loading="lazy" width="2360" height="1000"></a><figcaption>While it works.</figcaption></figure>
+        <figure class="shot tall"><a href="assets/screens/apply.png"><img src="assets/screens/apply.png" alt="Finished build: all six steps ticked, then a Ready card with the knowledge base ID, data source ID and example code" loading="lazy" width="2524" height="1922"></a><figcaption>When it's done.</figcaption></figure>
+      </div>
+    </div>
 
-    <h2 id="ask">4 · Try it</h2>
-<pre><code>kb.ask("How many weeks of parental leave do we get?")</code></pre>
-    <p>This shows the chunks the knowledge base retrieves, best match first, with their scores and source documents. It's retrieval only (no LLM answer), which makes it the quickest way to judge whether chunking and embeddings suit your documents.</p>
-    <figure>
-      <a href="assets/screens/ask.png"><img src="assets/screens/ask.png" alt="Three retrieved chunks with relevance bars, scores and the S3 path of each source document" loading="lazy" width="2524" height="870"></a>
-    </figure>
+    <div class="row" id="ask">
+      <div class="text">
+        <div class="num">Step 4</div>
+        <h3>Ask it something</h3>
+<pre><code>kb.ask(<span class="s">"How many weeks of parental leave?"</span>)</code></pre>
+        <p>You'll see the passages that match best, with a score and the file each came from. If the right passages come back, your knowledge base is ready to plug into a chatbot or app.</p>
+      </div>
+      <figure class="shot"><a href="assets/screens/ask.png"><img src="assets/screens/ask.png" alt="Three retrieved chunks with relevance bars, scores and the S3 path of each source document" loading="lazy" width="2524" height="870"></a></figure>
+    </div>
 
-    <h2 id="later">Sync, status &amp; clean up</h2>
-    <h3>After documents change</h3>
-<pre><code>kb.sync()     # re-ingest: picks up new, changed and deleted files
-kb.status()   # ids, health and how the last sync went</code></pre>
-    <figure class="narrow">
-      <a href="assets/screens/status.png"><img src="assets/screens/status.png" alt="Status card: knowledge base ID, region, embedding model, vector store, data source and last sync" loading="lazy" width="2524" height="704"></a>
-    </figure>
-    <h3>Save the definition</h3>
-    <p>Write it to YAML so teammates (or CI) can rebuild the same thing:</p>
-<pre><code>kb.save("kb.yaml")
-# later, anywhere:
-kb = KnowledgeBase.from_yaml("kb.yaml")</code></pre>
-    <h3>Delete it</h3>
-<pre><code>kb.destroy()               # shows what would be deleted, deletes nothing
-kb.destroy(confirm=True)   # actually deletes</code></pre>
-    <figure>
-      <a href="assets/screens/destroy.png"><img src="assets/screens/destroy.png" alt="Destroy plan listing the data source, knowledge base, role, index and vector bucket in deletion order" loading="lazy" width="2524" height="1658"></a>
-    </figure>
-    <p>Your source documents are never touched. Anything kbforge didn't create (it checks for its <code>managed-by: kbforge</code> tag) and any role you supplied are kept. Use <code>destroy(confirm=True, force=True)</code> only if you're sure.</p>
+    <div class="row" id="later">
+      <div class="text">
+        <div class="num">Afterwards</div>
+        <h3>Keep it fresh, or clean it up</h3>
+<pre><code>kb.sync()                  <span class="c"># documents changed</span>
+kb.status()                <span class="c"># is everything healthy?</span>
+kb.destroy()               <span class="c"># preview the delete</span>
+kb.destroy(confirm=<span class="k">True</span>)   <span class="c"># actually delete</span></code></pre>
+        <p><code>destroy()</code> only removes what kbforge created. <b>Your documents are never touched.</b></p>
+      </div>
+      <figure class="shot"><a href="assets/screens/status.png"><img src="assets/screens/status.png" alt="Status card: knowledge base ID, region, embedding model, vector store, data source and last sync" loading="lazy" width="2524" height="704"></a></figure>
+    </div>
+  </div>
+</section>
 
-    <h2 id="wizard">Prefer clicking? The wizard</h2>
-<pre><code>import kbforge
+<section class="block" id="ways">
+  <div class="wrap">
+    <h2>Other ways to run it</h2>
+    <p class="sub">The same describe, plan, build flow without writing Python.</p>
+    <div class="tabs" data-tabs>
+      <div class="tablist" role="tablist">
+        <button role="tab" aria-selected="true" aria-controls="tab-wizard" id="t-wizard">Wizard</button>
+        <button role="tab" aria-selected="false" aria-controls="tab-cli" id="t-cli">Command line and YAML</button>
+        <button role="tab" aria-selected="false" aria-controls="tab-guide" id="t-guide">In-notebook guide</button>
+      </div>
+      <div class="tabpanel" role="tabpanel" id="tab-wizard" aria-labelledby="t-wizard">
+        <div class="row">
+          <div class="text">
+<pre><code><span class="k">import</span> kbforge
 kbforge.wizard()</code></pre>
-    <p>A form that walks through the same three stages: describe, review the plan, build. <b>Show as code</b> gives you the equivalent Python and YAML, so you can move to a committed config later.</p>
-    <figure>
-      <a href="assets/screens/wizard-form.png"><img src="assets/screens/wizard-form.png" alt="The wizard form with name, S3 location, embedding model, dimensions, vector store and chunking fields" loading="lazy" width="2524" height="1050"></a>
-      <figcaption>Fill in a name and location; the defaults are marked "recommended".</figcaption>
-    </figure>
-    <figure>
-      <a href="assets/screens/wizard-plan.png"><img src="assets/screens/wizard-plan.png" alt="The wizard showing the plan after clicking Review plan, with the Build it button enabled" loading="lazy" width="2524" height="3470"></a>
-      <figcaption>"Review plan" shows the same plan card. "Build it" only unlocks when nothing is blocked.</figcaption>
-    </figure>
-    <figure>
-      <a href="assets/screens/wizard-built.png"><img src="assets/screens/wizard-built.png" alt="The wizard after building: progress card, ready card and an Ask box" loading="lazy" width="2524" height="3032"></a>
-      <figcaption>After building, an Ask box lets you try a question straight away.</figcaption>
-    </figure>
+            <p>A form: fill in a name and an S3 location (the recommended defaults are already picked), click <b>Review plan</b>, then <b>Build it</b>. The build button only unlocks when nothing is blocked.</p>
+            <p><b>Show as code</b> gives you the equivalent Python and YAML, so you can graduate to a saved config later.</p>
+          </div>
+          <div>
+            <figure class="shot"><a href="assets/screens/wizard-form.png"><img src="assets/screens/wizard-form.png" alt="The wizard form with name, S3 location, embedding model, dimensions, vector store and chunking fields" loading="lazy" width="2524" height="1050"></a></figure>
+            <figure class="shot tall"><a href="assets/screens/wizard-built.png"><img src="assets/screens/wizard-built.png" alt="The wizard after building: progress card, ready card and an Ask box" loading="lazy" width="2524" height="3032"></a><figcaption>After building, an Ask box lets you try a question straight away.</figcaption></figure>
+          </div>
+        </div>
+      </div>
+      <div class="tabpanel" role="tabpanel" id="tab-cli" aria-labelledby="t-cli" hidden>
+        <div class="row">
+          <div class="text">
+<pre><code>kbforge init              <span class="c"># writes a starter kb.yaml</span>
+kbforge plan kb.yaml      <span class="c"># checks + what would be built</span>
+kbforge apply kb.yaml     <span class="c"># asks before changing anything</span>
+kbforge ask kb.yaml <span class="s">"question"</span></code></pre>
+            <p>Keep the definition in git so teammates (or CI) build exactly the same thing. In a notebook, <code>kb.save("kb.yaml")</code> writes one for you.</p>
+            <p>All commands and the YAML format are in the <a href="reference.html#yaml">reference</a>.</p>
+          </div>
+          <figure class="shot"><a href="assets/screens/cli-plan.png"><img src="assets/screens/cli-plan.png" alt="Terminal output of kbforge plan: preflight checks with ticks and a colour-coded list of steps" loading="lazy" width="1760" height="1114"></a></figure>
+        </div>
+      </div>
+      <div class="tabpanel" role="tabpanel" id="tab-guide" aria-labelledby="t-guide" hidden>
+        <div class="row">
+          <div class="text">
+<pre><code><span class="k">import</span> kbforge
+kbforge.guide()</code></pre>
+            <p>Forgot a step? This card shows the whole journey, with code to copy, right inside your notebook.</p>
+          </div>
+          <figure class="shot"><a href="assets/screens/guide.png"><img src="assets/screens/guide.png" alt="The kbforge getting-started card listing four steps with code" loading="lazy" width="2524" height="1570"></a></figure>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
-    <h2 id="options">Options</h2>
-    <p class="sub">Everything <code>KnowledgeBase(...)</code> accepts. The same keys work in YAML.</p>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Option</th><th>Default</th><th>What it does</th></tr></thead>
-      <tbody>
-        <tr><td><code>name</code></td><td>required</td><td>Knowledge base name. Letters, digits, <code>-</code> and <code>_</code>. All other resource names are derived from it.</td></tr>
-        <tr><td><code>source</code></td><td>required</td><td><code>"s3://bucket/prefix/"</code>, <code>"https://site"</code>, <code>S3Source(...)</code> or <code>WebSource([...], max_pages=500)</code>.</td></tr>
-        <tr><td><code>embedding</code></td><td><code>titan-v2</code></td><td><code>titan-v2</code>, <code>cohere-en</code>, <code>cohere-multi</code>, <code>titan-v1</code>. Fixed once the KB exists.</td></tr>
-        <tr><td><code>dimensions</code></td><td>model default</td><td>Vector size. Titan v2 supports 256, 512 or 1024.</td></tr>
-        <tr><td><code>vector_store</code></td><td><code>s3_vectors</code></td><td><code>s3_vectors</code> or <code>opensearch_serverless</code> (needs <code>pip install "kbforge[opensearch]"</code>).</td></tr>
-        <tr><td><code>chunking</code></td><td><code>fixed</code></td><td><code>fixed</code>, <code>hierarchical</code>, <code>semantic</code>, <code>none</code>, or <code>Chunking.fixed(500, 10)</code> for custom sizes. Fixed once the data source exists.</td></tr>
-        <tr><td><code>role_arn</code></td><td>create one</td><td>Reuse an existing Bedrock role instead of creating one. It's never deleted by kbforge.</td></tr>
-        <tr><td><code>permissions_boundary</code></td><td>none</td><td>Attached to the role kbforge creates, if your organisation requires one.</td></tr>
-        <tr><td><code>region</code></td><td>session default</td><td>AWS region for everything. Must match your bucket's region.</td></tr>
-        <tr><td><code>description</code></td><td>generated</td><td>Shown in the Bedrock console.</td></tr>
-        <tr><td><code>tags</code></td><td><code>{}</code></td><td>Added to every resource, alongside <code>managed-by: kbforge</code>.</td></tr>
-        <tr><td><code>sync</code></td><td><code>True</code></td><td>Run the first ingestion as part of <code>apply()</code>.</td></tr>
-      </tbody>
-    </table></div>
-
-    <h3 id="choosing">Choosing settings</h3>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Decision</th><th>Start with</th><th>Switch when</th></tr></thead>
-      <tbody>
-        <tr><td>Vector store</td><td><b>S3 Vectors</b>: serverless, no minimum cost, nothing to manage.</td><td>You need hybrid (keyword + vector) search or very low-latency, high-QPS queries. OpenSearch Serverless bills for at least a couple of OCUs while it exists.</td></tr>
-        <tr><td>Embedding model</td><td><b>Titan v2, 1024d</b>: cheap, multilingual, long input.</td><td>English-only corpus where retrieval quality matters most: try <code>cohere-en</code>. Many languages mixed together: <code>cohere-multi</code>.</td></tr>
-        <tr><td>Chunking</td><td><b>Fixed, 300 tokens, 20% overlap.</b></td><td>Long structured documents (policies, manuals): <code>hierarchical</code>. Topic changes don't line up with paragraphs: <code>semantic</code> (slower and costs more per sync). Already-small files such as FAQs: <code>none</code>.</td></tr>
-      </tbody>
-    </table></div>
-    <div class="callout">Embedding model, vector store and chunking can't be changed in place. To try different settings, give the knowledge base a new name (e.g. <code>hr-policies-v2</code>), compare with <code>ask()</code>, then <code>destroy()</code> the one you don't keep.</div>
-
-    <h2 id="yaml">YAML &amp; the CLI</h2>
-    <p>Keep definitions in git and build them from a terminal or CI with the same plan → apply flow:</p>
-<pre><code><span class="c"># kb.yaml</span>
-name: hr-policies
-region: us-east-1
-source:
-  s3: s3://my-company-docs/hr/
-embedding: titan-v2
-vector_store: s3_vectors
-chunking:
-  strategy: fixed
-  max_tokens: 300
-  overlap_percent: 20
-tags:
-  team: people-ops</code></pre>
-<pre><code>kbforge init                      <span class="c"># write a starter kb.yaml</span>
-kbforge plan kb.yaml              <span class="c"># checks + what would be built</span>
-kbforge apply kb.yaml             <span class="c"># asks before changing anything (-y to skip)</span>
-kbforge ask kb.yaml "question"
-kbforge sync kb.yaml
-kbforge status kb.yaml
-kbforge destroy kb.yaml
-kbforge models                    <span class="c"># supported embedding models</span></code></pre>
-    <figure class="narrow">
-      <a href="assets/screens/cli-plan.png"><img src="assets/screens/cli-plan.png" alt="Terminal output of kbforge plan: preflight checks with ticks and a colour-coded list of steps" loading="lazy" width="1760" height="1114"></a>
-    </figure>
-    <p><code>kbforge plan</code> exits with code 2 when the plan is blocked, so CI can stop early.</p>
-
-    <h2 id="resources">What gets created</h2>
-    <p class="sub">For a knowledge base named <code>hr-policies</code> using S3 Vectors:</p>
-    <div class="table-wrap"><table>
-      <thead><tr><th>Resource</th><th>Name</th><th>Notes</th></tr></thead>
-      <tbody>
-        <tr><td>S3 vector bucket</td><td><code>kbforge-hr-policies</code></td><td>Holds the index.</td></tr>
-        <tr><td>Vector index</td><td><code>hr-policies-index</code></td><td>float32, cosine. Bedrock's text/metadata keys are marked non-filterable to avoid the 2 KB metadata limit.</td></tr>
-        <tr><td>IAM role</td><td><code>AmazonBedrockExecutionRoleForKnowledgeBase_kbf-hr-policies</code></td><td>Trusted only by Bedrock in your account. Can invoke the one embedding model, read the source bucket and use this index.</td></tr>
-        <tr><td>Knowledge base</td><td><code>hr-policies</code></td><td></td></tr>
-        <tr><td>Data source</td><td><code>hr-policies-source</code></td><td>Deletion policy <code>DELETE</code>: removing it also removes its vectors.</td></tr>
-      </tbody>
-    </table></div>
-    <p>With OpenSearch Serverless, the vector bucket and index are replaced by encryption and network policies, a collection, a data access policy (for the Bedrock role and you) and a k-NN index. Names are deterministic, so running the same definition twice finds the same resources and there's no state file to lose.</p>
-
-    <h2 id="permissions">Permissions for your notebook role</h2>
-    <p>The SageMaker execution role (or whoever runs kbforge) needs the policy below. Replace <code>YOUR-DOCUMENTS-BUCKET</code>. The IAM statements are scoped to roles whose names start with <code>AmazonBedrockExecutionRoleForKnowledgeBase_kbf-</code>, so kbforge can't touch any other role.</p>
-    <details>
-      <summary>Show the policy (<a href="notebook-role-policy.json" download>download JSON</a>)</summary>
-      <pre><code id="policy">Loading…</code></pre>
-    </details>
-    <p>For OpenSearch Serverless also allow <code>aoss:CreateCollection</code>, <code>aoss:BatchGetCollection</code>, <code>aoss:DeleteCollection</code>, <code>aoss:CreateSecurityPolicy</code>, <code>aoss:GetSecurityPolicy</code>, <code>aoss:DeleteSecurityPolicy</code>, <code>aoss:CreateAccessPolicy</code>, <code>aoss:GetAccessPolicy</code>, <code>aoss:UpdateAccessPolicy</code>, <code>aoss:DeleteAccessPolicy</code>, <code>aoss:APIAccessAll</code> and <code>aoss:TagResource</code>.</p>
-    <div class="callout"><b>IAM locked down?</b> Have an admin create a role that trusts <code>bedrock.amazonaws.com</code>, then pass <code>role_arn=</code>. The plan shows the exact permissions that role needs in the "IAM service role" fold-out, and you can drop the IAM statements above.</div>
-
-    <h2 id="troubleshooting">Troubleshooting</h2>
-    <div class="table-wrap"><table>
-      <thead><tr><th>You see</th><th>What it means</th><th>Fix</th></tr></thead>
-      <tbody>
-        <tr><td>Embedding model ✕ "can't invoke this model"</td><td>Model access isn't enabled for the account, or your role lacks <code>bedrock:InvokeModel</code>.</td><td>Bedrock console → Model access, or ask your admin. Try another region or model.</td></tr>
-        <tr><td>Source bucket ✕ "doesn't exist"</td><td>Typo in the bucket name, or it's in another account.</td><td>Check the <code>s3://</code> path.</td></tr>
-        <tr><td>Source bucket region ⚠</td><td>Bucket and knowledge base are in different regions. Bedrock requires them to match.</td><td>Pass <code>region="&lt;bucket region&gt;"</code>.</td></tr>
-        <tr><td>Source documents ⚠ "types Bedrock will skip"</td><td>Images, zips and similar files are ignored.</td><td>Nothing to do, or convert them. Files over 50 MB fail and should be split.</td></tr>
-        <tr><td>Bedrock knowledge base: <span class="badge" style="--c:var(--red)">blocked</span></td><td>A KB with this name exists with a different model or vector store.</td><td>Pick a new name, or <code>destroy()</code> the old one.</td></tr>
-        <tr><td>"Your notebook's role is missing a permission"</td><td>An AWS call was denied; the message names the action.</td><td>Add it (see <a href="#permissions">Permissions</a>), then <code>kb.apply()</code> again.</td></tr>
-        <tr><td>"Bedrock can't see the new role/index yet — retrying"</td><td>Normal: new IAM roles take a few seconds to reach Bedrock.</td><td>Wait. kbforge retries for up to two minutes.</td></tr>
-        <tr><td>Sync finished with "N failed"</td><td>Some documents couldn't be parsed.</td><td>Check <code>kb.status()</code> and the ingestion job in the Bedrock console for per-file reasons.</td></tr>
-      </tbody>
-    </table></div>
-
-    <h2 id="faq">FAQ</h2>
-    <details><summary>Does <code>plan()</code> cost anything or change anything?</summary><p>It changes nothing. The only billable call is one tiny embedding of the word "hello", which proves the model works for you. It costs a fraction of a cent.</p></details>
-    <details><summary>Can I adopt a knowledge base someone created by hand?</summary><p>If you use the same name, kbforge finds it and shows it as <span class="badge" style="--c:var(--muted)">exists</span>, or as <span class="badge" style="--c:var(--red)">blocked</span> if its settings differ. <code>destroy()</code> leaves it alone because it has no kbforge tag.</p></details>
-    <details><summary>Where's the state file?</summary><p>There isn't one. Every resource name is derived from the knowledge base name, so kbforge always looks the resources up live in AWS. Two people running the same YAML see the same plan.</p></details>
-    <details><summary>Can my application query it without kbforge?</summary><p>Yes. It's a normal Bedrock knowledge base. Use <code>bedrock-agent-runtime</code>'s <code>retrieve</code> or <code>retrieve_and_generate</code> with the knowledge base ID from the "ready" card.</p></details>
-    <details><summary>How were these screenshots made?</summary><p>By running a real JupyterLab against a simulated AWS account (the same fake the test-suite uses), so the IDs are made up and builds finish in seconds. Real builds take a few minutes, mostly for the first sync. Regenerate them with <code>uv run --group docs python scripts/docs_screenshots.py</code>.</p></details>
-  </main>
+<div class="wrap">
+  <nav class="next" aria-label="Next">
+    <a href="https://github.com/utkarsh5026/bedrcok/blob/main/notebooks/getting_started.ipynb"><b>Starter notebook</b><span>Upload it to SageMaker and run it top to bottom.</span></a>
+    <a href="reference.html"><b>Reference</b><span>Every option, the YAML format, what gets created.</span></a>
+    <a href="reference.html#troubleshooting"><b>Troubleshooting</b><span>Common errors and how to fix them.</span></a>
+  </nav>
 </div>
 
-<footer>kbforge · Apache-2.0 · <a href="https://github.com/utkarsh5026/bedrcok">github.com/utkarsh5026/bedrcok</a></footer>
+<footer>kbforge is open source under Apache-2.0 · <a href="https://github.com/utkarsh5026/bedrcok">github.com/utkarsh5026/bedrcok</a></footer>
 
-<script>
-  // Copy buttons on every code block.
-  document.querySelectorAll("pre").forEach((pre) => {
-    const button = document.createElement("button");
-    button.className = "copy";
-    button.type = "button";
-    button.textContent = "Copy";
-    button.addEventListener("click", async () => {
-      try {
-        await navigator.clipboard.writeText(pre.querySelector("code").innerText);
-        button.textContent = "Copied";
-      } catch (e) {
-        button.textContent = "Select & copy";
-      }
-      setTimeout(() => (button.textContent = "Copy"), 1500);
-    });
-    pre.appendChild(button);
-  });
-
-  // Inline the IAM policy from its JSON file so there's a single source of truth.
-  fetch("notebook-role-policy.json")
-    .then((r) => r.text())
-    .then((text) => (document.getElementById("policy").textContent = text))
-    .catch(() => (document.getElementById("policy").textContent = "Open notebook-role-policy.json next to this page."));
-
-  // Highlight the current section in the sidebar.
-  const links = [...document.querySelectorAll("aside.toc a")];
-  const targets = links.map((a) => document.querySelector(a.getAttribute("href"))).filter(Boolean);
-  const observer = new IntersectionObserver((entries) => {
-    entries.forEach((entry) => {
-      if (!entry.isIntersecting) return;
-      links.forEach((a) => a.classList.toggle("active", a.getAttribute("href") === "#" + entry.target.id));
-    });
-  }, { rootMargin: "-80px 0px -70% 0px" });
-  targets.forEach((t) => observer.observe(t));
-</script>
+<script src="assets/site.js" defer></script>
+<script src="assets/demo.js" defer></script>
 </body>
 </html>

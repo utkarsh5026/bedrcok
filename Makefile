@@ -11,7 +11,7 @@ ARGS   ?=
 .DEFAULT_GOAL := help
 
 TASKS := help info install install-docs test cov lint format format-check typecheck fix check \
-         build cli docs-screens docs-serve clean clean-all
+         build cli docs-screens docs-video docs-serve clean clean-all
 
 .PHONY: $(TASKS)
 
