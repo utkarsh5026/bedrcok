@@ -1,0 +1,79 @@
+{
+  // Interpreter: the uv-managed venv (uv sync --all-extras).
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+
+  // Pylance reads [tool.pyright] in pyproject.toml for type checking mode,
+  // include paths and Python version, so those are not repeated here.
+  "python.analysis.autoImportCompletions": true,
+  "python.analysis.inlayHints.functionReturnTypes": true,
+  "python.analysis.inlayHints.callArgumentNames": "partial",
+
+  // Ruff handles linting, import sorting and formatting (config in pyproject.toml).
+  "ruff.importStrategy": "fromEnvironment",
+  "ruff.organizeImports": true,
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    },
+    "editor.rulers": [120],
+    "editor.tabSize": 4
+  },
+
+  // mypy via the Microsoft mypy extension, using the venv's mypy.
+  "mypy-type-checker.importStrategy": "fromEnvironment",
+  "mypy-type-checker.reportingScope": "workspace",
+
+  // Tests.
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["tests"],
+
+  // Notebooks: run from the repo root so `examples/kb.yaml` style paths work.
+  "jupyter.notebookFileRoot": "${workspaceFolder}",
+  "notebook.formatOnSave.enabled": true,
+  "notebook.codeActionsOnSave": {
+    "notebook.source.fixAll": "explicit",
+    "notebook.source.organizeImports": "explicit"
+  },
+  "notebook.output.scrolling": true,
+
+  "[yaml]": {
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true
+  },
+  "[toml]": {
+    "editor.tabSize": 4
+  },
+  "[markdown]": {
+    "files.trimTrailingWhitespace": false,
+    "editor.wordWrap": "on"
+  },
+
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  "files.trimTrailingWhitespace": true,
+
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.mypy_cache": true,
+    "**/.ruff_cache": true,
+    "**/*.egg-info": true,
+    "**/.ipynb_checkpoints": true
+  },
+  "search.exclude": {
+    "**/.venv": true,
+    "**/dist": true,
+    "**/build": true,
+    "uv.lock": true
+  },
+  "files.watcherExclude": {
+    "**/.venv/**": true,
+    "**/.mypy_cache/**": true,
+    "**/.ruff_cache/**": true
+  }
+}
