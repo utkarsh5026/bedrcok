@@ -46,6 +46,7 @@ dev = [
     "ipywidgets>=8.0",
     "opensearch-py>=2.4",
     "requests>=2.31",
+    "rich>=13.0",
 ]
 # Regenerating the GitHub Pages screenshots: uv run --group docs python scripts/docs_screenshots.py
 docs = [

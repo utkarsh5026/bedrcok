@@ -7,10 +7,12 @@ A pip-installable Python package for building Amazon Bedrock Knowledge Bases fro
 ```bash
 uv sync --all-extras                 # install package + dev deps (Python 3.10+, dev uses 3.11)
 uv run pytest                        # all tests, against tests/fake_aws.py; no AWS needed
-uv run ruff check src tests scripts  # lint (ruff format to format)
+uv run ruff check src tests scripts makefile.py  # lint (ruff format to format)
 uv run mypy                          # type-check src/
 uv run --group docs python scripts/docs_screenshots.py --chromium <path>   # regenerate docs/assets/screens
 ```
+
+The same tasks are wrapped by `make` (see `make help`): `make check` runs lint, format, types and tests and prints one summary table. The `Makefile` is a thin shim; the logic and `rich` output live in `makefile.py`, so add new tasks there with the `@task` decorator.
 
 ## Layout
 
