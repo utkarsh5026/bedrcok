@@ -112,11 +112,75 @@ class FakeS3:
 class FakeBedrockRuntime:
     def __init__(self) -> None:
         self.denied = False
+        #: Model ids ``converse`` refuses, to play a parsing model you don't have access to.
+        self.denied_models: List[str] = []
+        self.conversed: List[str] = []
 
     def invoke_model(self, **_: Any) -> Dict[str, Any]:
         if self.denied:
             raise aws_error("AccessDeniedException", "You don't have access to the model")
         return {"body": b"{}"}
+
+    def converse(self, modelId: str, messages: list, **_: Any) -> Dict[str, Any]:
+        self.conversed.append(modelId)
+        if modelId in self.denied_models:
+            raise aws_error("AccessDeniedException", "You don't have access to the model")
+        return {"output": {"message": {"role": "assistant", "content": [{"text": "Hi"}]}}, "stopReason": "max_tokens"}
+
+
+def _model(model_id: str, name: str, provider: str, inputs: List[str], on_demand: bool = False) -> Dict[str, Any]:
+    return {
+        "modelId": model_id,
+        "modelName": name,
+        "providerName": provider,
+        "inputModalities": inputs,
+        "outputModalities": ["TEXT"],
+        "inferenceTypesSupported": ["ON_DEMAND"] if on_demand else ["INFERENCE_PROFILE"],
+        "modelLifecycle": {"status": "ACTIVE"},
+    }
+
+
+class FakeBedrock:
+    """Bedrock's control plane: just the model and inference-profile listings."""
+
+    def __init__(self) -> None:
+        self.denied = False
+        self.models: List[Dict[str, Any]] = [
+            _model("amazon.titan-embed-text-v2:0", "Titan Text Embeddings V2", "Amazon", ["TEXT"], on_demand=True),
+            _model("amazon.nova-micro-v1:0", "Nova Micro", "Amazon", ["TEXT"]),
+            _model("amazon.nova-lite-v1:0", "Nova Lite", "Amazon", ["TEXT", "IMAGE", "VIDEO"], on_demand=True),
+            _model("amazon.nova-pro-v1:0", "Nova Pro", "Amazon", ["TEXT", "IMAGE", "VIDEO"]),
+            _model("anthropic.claude-3-haiku-20240307-v1:0", "Claude 3 Haiku", "Anthropic", ["TEXT", "IMAGE"], True),
+            _model("anthropic.claude-sonnet-4-20250514-v1:0", "Claude Sonnet 4", "Anthropic", ["TEXT", "IMAGE"]),
+            _model("mistral.pixtral-large-2502-v1:0", "Pixtral Large", "Mistral AI", ["TEXT", "IMAGE"]),
+            # No profile in this region, and not callable on demand: unusable here.
+            _model("meta.llama4-maverick-17b-instruct-v1:0", "Llama 4 Maverick", "Meta", ["TEXT", "IMAGE"]),
+        ]
+        self.profiles: List[Dict[str, Any]] = [
+            self._profile(f"us.{m}", m)
+            for m in ("amazon.nova-lite-v1:0", "amazon.nova-pro-v1:0", "anthropic.claude-sonnet-4-20250514-v1:0")
+        ]
+
+    @staticmethod
+    def _profile(profile_id: str, model_id: str) -> Dict[str, Any]:
+        return {
+            "inferenceProfileId": profile_id,
+            "status": "ACTIVE",
+            "models": [
+                {"modelArn": f"arn:aws:bedrock:{r}::foundation-model/{model_id}"} for r in ("us-east-1", "us-west-2")
+            ],
+        }
+
+    def list_foundation_models(self, byOutputModality: str = "", **_: Any) -> Dict[str, Any]:
+        if self.denied:
+            raise aws_error("AccessDeniedException", "not authorized to perform: bedrock:ListFoundationModels")
+        return {"modelSummaries": [m for m in self.models if byOutputModality in m["outputModalities"]]}
+
+    def list_inference_profiles(self, nextToken: str = "", **_: Any) -> Dict[str, Any]:
+        # Two pages, so callers have to follow nextToken.
+        if not nextToken:
+            return {"inferenceProfileSummaries": self.profiles[:1], "nextToken": "page-2"}
+        return {"inferenceProfileSummaries": self.profiles[1:]}
 
 
 class FakeS3Vectors:
@@ -393,6 +457,7 @@ class FakeAws:
             "iam": FakeIam(),
             "s3": FakeS3(),
             "bedrock-runtime": FakeBedrockRuntime(),
+            "bedrock": FakeBedrock(),
             "s3vectors": FakeS3Vectors(),
             "bedrock-agent": FakeBedrockAgent(),
             "bedrock-agent-runtime": FakeAgentRuntime(),

@@ -7,6 +7,7 @@ What we check:
 
 * your AWS credentials work (and which account/region you're in),
 * the embedding model can actually be invoked (catches "model access not enabled"),
+* the parsing model, if you chose one, can be invoked too,
 * chunks aren't longer than the embedding model can read,
 * the source bucket exists, is in the right region, and contains files Bedrock can read,
 * the chosen vector store is available,
@@ -99,6 +100,52 @@ def _check_model(spec: KBSpec, aws: Aws) -> Check:
         else:
             hint = error_message(exc)
         return Check(FAIL, title, hint)
+
+
+def _check_parser(spec: KBSpec, aws: Aws) -> Optional[Check]:
+    """Ask the parsing model for one token, so a model you can't use stops the plan, not the sync.
+
+    Silent for the default parser. Data Automation can't be tried without a document, so it
+    gets a note about cost instead.
+    """
+    parsing = spec.parsing
+    if parsing.strategy == "data_automation":
+        return Check(
+            OK,
+            "Parser · Bedrock Data Automation",
+            "Reads tables, charts and scans in PDFs. Billed per page on every sync. Not offered in every "
+            "region; if the first sync fails, check Bedrock Data Automation is available in " + aws.region + ".",
+        )
+    parser = parsing.parser
+    if parser is None:
+        return None
+    title = f"Parsing model · {parser.label}"
+    model_id = parser.invoke_id(aws.region)
+    try:
+        aws.client("bedrock-runtime").converse(
+            modelId=model_id,
+            messages=[{"role": "user", "content": [{"text": "hello"}]}],
+            inferenceConfig={"maxTokens": 1},
+        )
+    except ClientError as exc:
+        code = error_code(exc)
+        listing = "Run kbforge.parsing_models() (or `kbforge parsers`) to see the models you can use."
+        if code == "AccessDeniedException":
+            hint = (
+                f"Your role can't invoke {model_id}, or model access isn't enabled for the account. "
+                "Check Bedrock → Model access, and that your role allows bedrock:InvokeModel. " + listing
+            )
+        elif code in ("ValidationException", "ResourceNotFoundException"):
+            hint = f"{model_id} isn't available in {aws.region}: {error_message(exc)} " + listing
+        else:
+            hint = error_message(exc)
+        return Check(FAIL, title, hint)
+    return Check(
+        OK,
+        title,
+        f"{model_id} responded. Every PDF page goes to this model on each sync, which is slower and costs more "
+        "than the default parser.",
+    )
 
 
 def _check_chunk_size(spec: KBSpec) -> Optional[Check]:
@@ -269,6 +316,9 @@ def run_checks(spec: KBSpec, aws: Aws, identity_only: bool = False) -> List[Chec
     if ident.status == FAIL or identity_only:
         return [ident]
     checks = [ident, _check_model(spec, aws)]
+    parser = _check_parser(spec, aws)
+    if parser:
+        checks.append(parser)
     chunk_size = _check_chunk_size(spec)
     if chunk_size:
         checks.append(chunk_size)

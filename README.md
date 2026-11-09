@@ -158,6 +158,7 @@ Every AWS resource is a step that is first **inspected** (never changed) and the
 | `embedding` | `titan-v2` | `titan-v2`, `cohere-en`, `cohere-multi`, `titan-v1` |
 | `vector_store` | `s3_vectors` | `s3_vectors`, `opensearch_serverless` (needs `kbforge[opensearch]`) |
 | `chunking` | `fixed` (300 tokens, 20%) | `fixed`, `hierarchical`, `semantic`, `none`, or `Chunking.fixed(500, 10)` |
+| `parsing` | `default` (plain text) | `default`, `data_automation`, or a parsing model such as `nova-lite`; `kbforge.parsing_models()` lists the ones your account can use |
 | `role_arn` | create one | an existing role that trusts `bedrock.amazonaws.com` |
 | `region`, `tags`, `description`, `permissions_boundary`, `sync` | | see the [guide](https://utkarsh5026.github.io/bedrcok/) |
 

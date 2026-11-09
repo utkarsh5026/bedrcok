@@ -8,6 +8,7 @@ kbforge ask kb.yaml "question"  # try a query
 kbforge status kb.yaml
 kbforge destroy kb.yaml         # delete it (asks first)
 kbforge models                  # list supported embedding models
+kbforge parsers                 # list the models your account can use to parse documents
 """
 
 from __future__ import annotations
@@ -18,8 +19,10 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+from .aws import Aws
 from .knowledge_base import KBForgeError, KnowledgeBase
 from .models import EMBEDDING_MODELS
+from .parsers import known_parsing_models, list_parsing_models
 from .plan import ApplyResult, make_plan
 from .spec import config_format
 
@@ -34,6 +37,12 @@ source:
 
 embedding: titan-v2          # titan-v2 | cohere-en | cohere-multi | titan-v1
 vector_store: s3_vectors     # s3_vectors | opensearch_serverless
+
+# How text is read out of each file. "default" pulls out plain text (free). To have a
+# vision model read tables, charts and scans in PDFs, list the models with `kbforge parsers`:
+# parsing:
+#   strategy: foundation_model    # default | foundation_model | data_automation
+#   model: nova-lite
 
 # Pick ONE strategy and keep only its settings:
 #   fixed:        max_tokens, overlap_percent
@@ -156,6 +165,17 @@ def cmd_models(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_parsers(args: argparse.Namespace) -> int:
+    """``kbforge parsers``: list the models this account can use to parse documents."""
+    try:
+        aws = Aws(region=args.region)
+    except Exception as exc:
+        print(known_parsing_models(args.region or "", f"Couldn't connect to AWS ({exc})."))
+        return 0
+    print(list_parsing_models(aws))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """The argparse definition for every subcommand."""
     parser = argparse.ArgumentParser(prog="kbforge", description="Plan and build Amazon Bedrock Knowledge Bases.")
@@ -192,6 +212,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_destroy)
 
     sub.add_parser("models", help="list supported embedding models").set_defaults(func=cmd_models)
+    p = sub.add_parser("parsers", help="list the models your account can use to parse documents")
+    p.add_argument("--region", help="region to look in (default: your AWS profile's region)")
+    p.set_defaults(func=cmd_parsers)
     return parser
 
 

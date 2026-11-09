@@ -19,7 +19,9 @@
         "bedrock:Retrieve",
         "bedrock:TagResource",
         "bedrock:ListTagsForResource",
-        "bedrock:InvokeModel"
+        "bedrock:InvokeModel",
+        "bedrock:ListFoundationModels",
+        "bedrock:ListInferenceProfiles"
       ],
       "Resource": "*"
     },

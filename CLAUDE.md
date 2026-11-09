@@ -17,8 +17,9 @@ The same tasks are wrapped by `make` (see `make help`): `make check` runs lint, 
 
 ## Layout
 
-- `src/kbforge/spec.py`: `KBSpec` (what the user wants), `S3Source`/`WebSource`, `Chunking`, and `Names` (every AWS name, derived deterministically from the KB name; this is why there's no state file).
-- `src/kbforge/models.py`: catalogue of embedding models (alias → model id, dimensions).
+- `src/kbforge/spec.py`: `KBSpec` (what the user wants), `S3Source`/`WebSource`, `Parsing`, `Chunking`, and `Names` (every AWS name, derived deterministically from the KB name; this is why there's no state file).
+- `src/kbforge/models.py`: catalogues of embedding models (alias → model id, dimensions) and parsing models (alias → model id, called through the region's cross-region inference profile).
+- `src/kbforge/parsers.py`: `list_parsing_models()` asks Bedrock which vision models in the region can parse documents (`kbforge.parsing_models()`, `kbforge parsers`), falling back to the catalogue when listing isn't allowed.
 - `src/kbforge/aws.py`: `Aws` wrapper (cached clients, identity, SageMaker assumed-role → role ARN), plus `wait_for` and `retry_on` for eventual consistency.
 - `src/kbforge/checks.py`: preflight checks (credentials, model invoke, S3 scan, vector store, user-supplied role). A `fail` blocks apply.
 - `src/kbforge/steps/`: one `Step` per AWS resource. `base.py` defines `Step`/`Action`/`Inspection`/`Ctx`; `iam.py`, `s3_vectors.py`, `opensearch.py` and `bedrock.py` implement them; `build_steps()` sets the order.

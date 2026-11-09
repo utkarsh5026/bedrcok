@@ -1,7 +1,7 @@
 """The Bedrock pieces: the knowledge base, its data source, and the ingestion (sync) job.
 
 * The **knowledge base** says *which* embedding model to use and *where* vectors are stored.
-* The **data source** says *where documents come from* and *how to chunk them*.
+* The **data source** says *where documents come from*, *how to read them* and *how to chunk them*.
 * An **ingestion job** actually reads, chunks, embeds and stores the documents. You run one
   after creating the KB, and again whenever documents change (``kb.sync()``).
 """
@@ -175,7 +175,7 @@ class KnowledgeBaseStep(Step):
 
 
 class DataSourceStep(Step):
-    """Connects the knowledge base to your documents and sets the chunking strategy."""
+    """Connects the knowledge base to your documents and sets how they're parsed and chunked."""
 
     title = "Data source"
 
@@ -184,8 +184,11 @@ class DataSourceStep(Step):
         return ctx.names.data_source
 
     def explain(self, ctx: Ctx) -> str:
-        """Where documents come from and how they're chunked."""
-        return f"Points the knowledge base at {ctx.spec.source.describe()}. Chunking: {ctx.spec.chunking.describe()}."
+        """Where documents come from and how they're parsed and chunked."""
+        return (
+            f"Points the knowledge base at {ctx.spec.source.describe()}. Parsing: {ctx.spec.parsing.describe()}. "
+            f"Chunking: {ctx.spec.chunking.describe()}."
+        )
 
     def find(self, ctx: Ctx) -> Optional[Dict[str, Any]]:
         """Look up our data source by name inside the knowledge base (None if the KB doesn't exist yet)."""
@@ -200,30 +203,47 @@ class DataSourceStep(Step):
                     return found["dataSource"]
         return None
 
+    def _wanted_parsing(self, ctx: Ctx) -> Optional[Dict[str, Any]]:
+        """The ``parsingConfiguration`` the spec asks for (None for Bedrock's default parser)."""
+        return ctx.spec.parsing.to_api(ctx.aws.region, ctx.aws.account_id)
+
     def inspect(self, ctx: Ctx) -> Inspection:
-        """Find the data source; warn if its chunking differs from the spec."""
+        """Find the data source; warn if its chunking or parsing differs from the spec."""
         ds = self.find(ctx)
         if ds is None:
             return Inspection(Action.CREATE)
         ctx.out["ds_id"] = ds["dataSourceId"]
-        chunking = ds.get("vectorIngestionConfiguration", {}).get("chunkingConfiguration", {})
+        ingestion = ds.get("vectorIngestionConfiguration", {})
+        warnings = []
+        chunking = ingestion.get("chunkingConfiguration", {})
         current, wanted = chunking.get("chunkingStrategy"), ctx.spec.chunking.to_api()["chunkingStrategy"]
-        warning = ""
         if current and current != wanted:
-            warning = (
+            warnings.append(
                 f"Existing data source chunks with {current}, but the spec says {wanted}. Chunking is fixed "
                 "when a data source is created — destroy and recreate to change it."
             )
-        return Inspection(Action.EXISTS, ds["dataSourceId"], warning=warning)
+        current_parser = describe_parsing(ingestion.get("parsingConfiguration"))
+        wanted_parser = describe_parsing(self._wanted_parsing(ctx))
+        if current_parser != wanted_parser:
+            warnings.append(
+                f"Existing data source parses with {current_parser}, but the spec says {wanted_parser}. kbforge "
+                "doesn't change parsing on an existing data source — destroy and apply again (or use a new name) "
+                "to switch."
+            )
+        return Inspection(Action.EXISTS, ds["dataSourceId"], warning=" ".join(warnings))
 
     def create(self, ctx: Ctx, log: Log, inspection: Inspection) -> str:
-        """Create the data source with the spec's source and chunking."""
+        """Create the data source with the spec's source, parsing and chunking."""
+        ingestion: Dict[str, Any] = {"chunkingConfiguration": ctx.spec.chunking.to_api()}
+        parsing = self._wanted_parsing(ctx)
+        if parsing:
+            ingestion["parsingConfiguration"] = parsing
         ds = ctx.aws.client("bedrock-agent").create_data_source(
             knowledgeBaseId=ctx.out["kb_id"],
             name=ctx.names.data_source,
             description=f"{ctx.spec.source.describe()} (kbforge)",
             dataSourceConfiguration=ctx.spec.source.to_api(),
-            vectorIngestionConfiguration={"chunkingConfiguration": ctx.spec.chunking.to_api()},
+            vectorIngestionConfiguration=ingestion,
             # When the data source is deleted, also delete its vectors from the store.
             dataDeletionPolicy="DELETE",
         )["dataSource"]
@@ -297,6 +317,18 @@ class SyncStep(Step):
     def delete(self, ctx: Ctx, log: Log) -> str:
         """Nothing to delete: an ingestion job isn't a resource."""
         return ""
+
+
+def describe_parsing(config: Optional[Dict[str, Any]]) -> str:
+    """Name the parser a ``parsingConfiguration`` uses, e.g. ``us.amazon.nova-lite-v1:0``, for messages."""
+    if not config:
+        return "the default parser"
+    if config.get("parsingStrategy") == "BEDROCK_FOUNDATION_MODEL":
+        arn = config.get("bedrockFoundationModelConfiguration", {}).get("modelArn", "")
+        return arn.rsplit("/", 1)[-1] or "a foundation model"
+    if config.get("parsingStrategy") == "BEDROCK_DATA_AUTOMATION":
+        return "Bedrock Data Automation"
+    return str(config.get("parsingStrategy", "an unknown parser"))
 
 
 def latest_ingestion_job(aws: Aws, kb_id: str, ds_id: str) -> Optional[Dict[str, Any]]:

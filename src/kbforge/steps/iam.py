@@ -2,7 +2,8 @@
 
 When a knowledge base syncs, it is *Bedrock* — not you — that reads your documents, calls
 the embedding model and writes vectors. It does that by assuming this role, so the role
-needs exactly those three permissions and nothing more.
+needs exactly those three permissions and nothing more (plus the parsing model or Bedrock
+Data Automation, if the spec uses one to read documents).
 """
 
 from __future__ import annotations
@@ -32,7 +33,8 @@ class RoleStep(Step):
             return (
                 "Uses the role you supplied. It must trust bedrock.amazonaws.com and have the permissions shown below."
             )
-        return "The identity Bedrock assumes to read your documents, call the embedding model and write vectors."
+        models = "the embedding model" if ctx.spec.parsing.strategy == "default" else "the embedding model and parser"
+        return f"The identity Bedrock assumes to read your documents, call {models} and write vectors."
 
     def details(self, ctx: Ctx) -> Optional[Tuple[str, str]]:
         """The permissions policy as JSON, for the plan's fold-out."""
@@ -57,7 +59,7 @@ class RoleStep(Step):
         }
 
     def permissions_policy(self, ctx: Ctx) -> Dict[str, Any]:
-        """What the role may do: invoke the embedding model, read the source, read/write the vector store."""
+        """What the role may do: invoke the embedding model (and parser), read the source, use the vector store."""
         spec, region, acct = ctx.spec, ctx.aws.region, ctx.aws.account_id
         statements: List[Dict[str, Any]] = [
             {
@@ -67,6 +69,7 @@ class RoleStep(Step):
                 "Resource": [spec.model.arn(region)],
             }
         ]
+        statements += self.parsing_statements(ctx)
         if isinstance(spec.source, S3Source):
             bucket = f"arn:aws:s3:::{spec.source.bucket}"
             statements.append(
@@ -105,6 +108,41 @@ class RoleStep(Step):
                 }
             )
         return {"Version": "2012-10-17", "Statement": statements}
+
+    def parsing_statements(self, ctx: Ctx) -> List[Dict[str, Any]]:
+        """What the role needs to read documents with an advanced parser (nothing for the default one)."""
+        parsing, region, acct = ctx.spec.parsing, ctx.aws.region, ctx.aws.account_id
+        parser = parsing.parser
+        if parser is not None:
+            return [
+                {
+                    "Sid": "InvokeParsingModel",
+                    "Effect": "Allow",
+                    "Action": ["bedrock:InvokeModel"],
+                    "Resource": parser.iam_resources(region, acct),
+                }
+            ]
+        if parsing.strategy == "data_automation":
+            # Bedrock's documented statements for Data Automation; "*" in the account field also
+            # covers the account-less ARNs AWS-owned profiles use.
+            return [
+                {
+                    "Sid": "DataAutomationInvoke",
+                    "Effect": "Allow",
+                    "Action": ["bedrock:InvokeDataAutomationAsync"],
+                    "Resource": [
+                        f"arn:aws:bedrock:{region}:aws:data-automation-project/public-rag-default",
+                        f"arn:aws:bedrock:{region}:*:data-automation-profile/*",
+                    ],
+                },
+                {
+                    "Sid": "DataAutomationStatus",
+                    "Effect": "Allow",
+                    "Action": ["bedrock:GetDataAutomationStatus"],
+                    "Resource": [f"arn:aws:bedrock:{region}:*:data-automation-invocation/*"],
+                },
+            ]
+        return []
 
     def inspect(self, ctx: Ctx) -> Inspection:
         """Use your role, or check ours exists, belongs to this knowledge base and has up-to-date permissions."""
