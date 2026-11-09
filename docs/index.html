@@ -139,7 +139,7 @@ footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 14
     <div class="label">Reference</div>
     <a href="#options">Options</a>
     <a href="#choosing">Choosing settings</a>
-    <a href="#yaml">YAML &amp; the CLI</a>
+    <a href="#yaml">YAML, JSON &amp; the CLI</a>
     <a href="#resources">What gets created</a>
     <a href="#permissions">Permissions</a>
     <a href="#troubleshooting">Troubleshooting</a>
@@ -253,10 +253,10 @@ kb.status()   # ids, health and how the last sync went</code></pre>
       <a href="assets/screens/status.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/status-dark.png"><img src="assets/screens/status.png" alt="Status card: knowledge base ID, region, embedding model, vector store, data source and last sync" loading="lazy" width="2524" height="704"></picture></a>
     </figure>
     <h3>Save the definition</h3>
-    <p>Write it to YAML so teammates (or CI) can rebuild the same thing:</p>
-<pre><code>kb.save("kb.yaml")
+    <p>Write it to a YAML or JSON file so teammates (or CI) can rebuild the same thing. The extension picks the format:</p>
+<pre><code>kb.save("kb.yaml")         # or kb.save("kb.json")
 # later, anywhere:
-kb = KnowledgeBase.from_yaml("kb.yaml")</code></pre>
+kb = KnowledgeBase.from_file("kb.yaml")</code></pre>
     <h3>Delete it</h3>
 <pre><code>kb.destroy()               # shows what would be deleted, deletes nothing
 kb.destroy(confirm=True)   # actually deletes</code></pre>
@@ -283,7 +283,7 @@ kbforge.wizard()</code></pre>
     </figure>
 
     <h2 id="options">Options</h2>
-    <p class="sub">Everything <code>KnowledgeBase(...)</code> accepts. The same keys work in YAML.</p>
+    <p class="sub">Everything <code>KnowledgeBase(...)</code> accepts. The same keys work in YAML and JSON config files.</p>
     <div class="table-wrap"><table>
       <thead><tr><th>Option</th><th>Default</th><th>What it does</th></tr></thead>
       <tbody>
@@ -313,8 +313,8 @@ kbforge.wizard()</code></pre>
     </table></div>
     <div class="callout">Embedding model, vector store and chunking can't be changed in place. To try different settings, give the knowledge base a new name (e.g. <code>hr-policies-v2</code>), compare with <code>ask()</code>, then <code>destroy()</code> the one you don't keep.</div>
 
-    <h2 id="yaml">YAML &amp; the CLI</h2>
-    <p>Keep definitions in git and build them from a terminal or CI with the same plan → apply flow:</p>
+    <h2 id="yaml">YAML, JSON &amp; the CLI</h2>
+    <p>Keep definitions in git and build them from a terminal or CI with the same plan → apply flow. <a href="https://github.com/utkarsh5026/bedrcok/blob/main/examples/kb.yaml"><code>examples/kb.yaml</code></a> documents every option, including the settings for each chunking strategy:</p>
 <pre><code><span class="c"># kb.yaml</span>
 name: hr-policies
 region: us-east-1
@@ -328,7 +328,25 @@ chunking:
   overlap_percent: 20
 tags:
   team: people-ops</code></pre>
-<pre><code>kbforge init                      <span class="c"># write a starter kb.yaml</span>
+    <p>Each chunking strategy takes its own settings. Give only the ones for the strategy you pick; a setting from another strategy is reported as an error:</p>
+    <ul>
+      <li><code>fixed</code>: <code>max_tokens</code>, <code>overlap_percent</code></li>
+      <li><code>hierarchical</code>: <code>parent_tokens</code>, <code>child_tokens</code>, <code>overlap_tokens</code></li>
+      <li><code>semantic</code>: <code>max_tokens</code>, <code>buffer_size</code>, <code>breakpoint_threshold</code></li>
+      <li><code>none</code>: no settings</li>
+    </ul>
+<pre><code>chunking:
+  strategy: hierarchical
+  parent_tokens: 1500
+  child_tokens: 300
+  overlap_tokens: 60</code></pre>
+    <p>Prefer JSON? Use the same keys in a <code>.json</code> file (see <a href="https://github.com/utkarsh5026/bedrcok/blob/main/examples/kb.json"><code>examples/kb.json</code></a>); every command below accepts either.</p>
+<pre><code>{
+  "name": "hr-policies",
+  "source": {"s3": "s3://my-company-docs/hr/"},
+  "chunking": {"strategy": "semantic", "max_tokens": 300, "buffer_size": 0, "breakpoint_threshold": 95}
+}</code></pre>
+<pre><code>kbforge init                      <span class="c"># write a starter kb.yaml (kbforge init kb.json for JSON)</span>
 kbforge plan kb.yaml              <span class="c"># checks + what would be built</span>
 kbforge apply kb.yaml             <span class="c"># asks before changing anything (-y to skip)</span>
 kbforge ask kb.yaml "question"

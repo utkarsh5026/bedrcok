@@ -2,7 +2,7 @@
 
 import json
 
-from kbforge import ApplyResult, KnowledgeBase, Plan
+from kbforge import ApplyResult, Chunking, KnowledgeBase, Plan
 from kbforge.checks import FAIL, WARN
 from kbforge.steps import Action
 
@@ -177,3 +177,34 @@ def test_role_policy_drift_is_detected_and_fixed(kb, fake_aws):
     assert actions(kb.plan())["IAM service role"] == Action.UPDATE
     kb.apply()
     assert actions(kb.plan())["IAM service role"] == Action.EXISTS
+
+
+def chunk_size_check(kb):
+    return next((c for c in kb.plan().checks if c.title == "Chunk size"), None)
+
+
+def test_chunks_longer_than_the_model_reads_are_flagged(spec, fake_aws):
+    spec.embedding, spec.chunking = "cohere-en", Chunking.fixed(1000, 20)
+    kb = KnowledgeBase.from_spec(spec)
+    kb._aws = fake_aws  # type: ignore[assignment]
+
+    check = chunk_size_check(kb)
+    assert check is not None and check.status == WARN
+    assert "512" in check.detail and "max_tokens" in check.detail
+    assert kb.plan().ready  # a warning, not a blocker
+
+
+def test_hierarchical_chunk_size_is_judged_by_its_child_chunks(spec, fake_aws):
+    spec.embedding = "cohere-en"
+    spec.chunking = Chunking.hierarchical(parent_tokens=2000, child_tokens=400)
+    kb = KnowledgeBase.from_spec(spec)
+    kb._aws = fake_aws  # type: ignore[assignment]
+    assert chunk_size_check(kb) is None
+
+    kb.spec.chunking = Chunking.hierarchical(parent_tokens=2000, child_tokens=600)
+    check = chunk_size_check(kb)
+    assert check is not None and "child_tokens" in check.detail
+
+
+def test_chunks_that_fit_add_no_check(kb):
+    assert chunk_size_check(kb) is None

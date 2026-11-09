@@ -103,9 +103,11 @@ Resource names are derived from the KB name, so a second run finds what already 
 <br>
 
 ```bash
-kbforge plan  examples/kb.yaml
+kbforge plan  examples/kb.yaml     # or examples/kb.json: same keys, either format
 kbforge apply examples/kb.yaml
 ```
+
+[`examples/kb.yaml`](examples/kb.yaml) documents every option, including the settings for each chunking strategy. [`examples/README.md`](examples/README.md) has the JSON versions.
 
 <img src="docs/assets/screens/cli-plan.png" alt="kbforge plan output in a terminal" width="700">
 
@@ -158,6 +160,8 @@ Every AWS resource is a step that is first **inspected** (never changed) and the
 | `chunking` | `fixed` (300 tokens, 20%) | `fixed`, `hierarchical`, `semantic`, `none`, or `Chunking.fixed(500, 10)` |
 | `role_arn` | create one | an existing role that trusts `bedrock.amazonaws.com` |
 | `region`, `tags`, `description`, `permissions_boundary`, `sync` | | see the [guide](https://utkarsh5026.github.io/bedrcok/) |
+
+The same keys work in a YAML or JSON file: `KnowledgeBase.from_file("kb.json")` loads one, and `kb.save("kb.json")` writes one. See [`examples/`](examples/).
 
 <a id="development"></a>
 

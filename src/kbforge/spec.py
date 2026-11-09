@@ -4,17 +4,18 @@ A ``KBSpec`` describes the knowledge base you'd like to end up with — its name
 documents are, which embedding model and vector store to use, how to chunk. It says nothing
 about *how* to build it; that's the job of the steps in ``kbforge.steps``.
 
-Specs can be built in Python or loaded from YAML (``KBSpec.from_yaml("kb.yaml")``), so a
-team can keep its knowledge-base definitions in git.
+Specs can be built in Python or loaded from a YAML or JSON file (``KBSpec.from_file("kb.yaml")``),
+so a team can keep its knowledge-base definitions in git.
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from .models import EmbeddingModel, resolve_model
 
@@ -34,6 +35,31 @@ _VECTOR_STORE_ALIASES = {
     "opensearch": "opensearch_serverless",
     "aoss": "opensearch_serverless",
 }
+
+#: The settings each chunking strategy uses. A config file may only set the ones listed for
+#: its strategy, so a typo or a setting borrowed from another strategy is reported, not ignored.
+CHUNKING_SETTINGS = {
+    "fixed": ("max_tokens", "overlap_percent"),
+    "hierarchical": ("parent_tokens", "child_tokens", "overlap_tokens"),
+    "semantic": ("max_tokens", "buffer_size", "breakpoint_threshold"),
+    "none": (),
+}
+
+#: The range Bedrock's CreateDataSource API accepts for each chunking setting (``None`` means no
+#: upper limit). Checking them here means a bad value stops the plan instead of failing apply
+#: halfway through, after the vector store, role and knowledge base were already created.
+CHUNKING_LIMITS: Dict[str, Tuple[int, Optional[int]]] = {
+    "max_tokens": (1, 8192),
+    "overlap_percent": (1, 99),
+    "parent_tokens": (1, 8192),
+    "child_tokens": (1, 8192),
+    "overlap_tokens": (1, None),
+    "buffer_size": (0, 1),
+    "breakpoint_threshold": (50, 99),
+}
+
+#: File extensions kbforge reads and writes as config, mapped to their format.
+CONFIG_FORMATS = {".yaml": "yaml", ".yml": "yaml", ".json": "json"}
 
 #: Bedrock's rule for knowledge-base names: letters/digits, single '-' or '_' between them.
 KB_NAME_RE = re.compile(r"^([0-9a-zA-Z][_-]?){1,100}$")
@@ -218,9 +244,61 @@ class Chunking:
         """Don't split: every file becomes exactly one chunk."""
         return cls("none")
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> Chunking:
+        """Build chunking from a config-file block such as ``{"strategy": "semantic", "max_tokens": 400}``.
+
+        Settings left out keep their defaults. Settings that don't belong to the chosen strategy
+        (``overlap_percent`` on semantic chunking, say) raise an error naming the ones that do,
+        because Bedrock would otherwise ignore them without telling anyone.
+        """
+        data = dict(data)
+        strategy = data.pop("strategy", "fixed")
+        allowed = CHUNKING_SETTINGS.get(strategy)
+        if allowed is None:
+            raise ValueError(f"chunking strategy must be one of: {', '.join(CHUNKING_SETTINGS)}, got {strategy!r}")
+        unexpected = sorted(set(data) - set(allowed))
+        if unexpected:
+            hint = f"its settings are: {', '.join(allowed)}" if allowed else "it takes no other settings"
+            raise ValueError(f"{', '.join(unexpected)} can't be used with {strategy} chunking; {hint}.")
+        return cls(strategy, **data)
+
     def __post_init__(self) -> None:
-        if self.strategy not in ("fixed", "hierarchical", "semantic", "none"):
-            raise ValueError("chunking strategy must be one of: fixed, hierarchical, semantic, none")
+        if self.strategy not in CHUNKING_SETTINGS:
+            raise ValueError(f"chunking strategy must be one of: {', '.join(CHUNKING_SETTINGS)}")
+        for key in CHUNKING_SETTINGS[self.strategy]:
+            value = getattr(self, key)
+            low, high = CHUNKING_LIMITS[key]
+            allowed = f"between {low} and {high}" if high is not None else f"at least {low}"
+            # bool is a subclass of int, but `max_tokens: true` is a mistake, not a number.
+            if not isinstance(value, int) or isinstance(value, bool):
+                raise ValueError(f"chunking {key} must be a whole number {allowed}, got {value!r}.")
+            if value < low or (high is not None and value > high):
+                raise ValueError(f"chunking {key} must be {allowed}, got {value}.")
+        if self.strategy == "hierarchical":
+            if self.child_tokens >= self.parent_tokens:
+                raise ValueError(
+                    f"child_tokens ({self.child_tokens}) must be smaller than parent_tokens ({self.parent_tokens}): "
+                    "the small child chunks are searched and their bigger parent is returned."
+                )
+            if self.overlap_tokens >= self.child_tokens:
+                raise ValueError(
+                    f"overlap_tokens ({self.overlap_tokens}) must be smaller than child_tokens ({self.child_tokens}), "
+                    "or neighbouring chunks would be all overlap."
+                )
+
+    @property
+    def embedded_tokens(self) -> Optional[int]:
+        """The largest chunk that gets sent to the embedding model, or None if there's no limit.
+
+        For hierarchical chunking only the small child chunks are embedded; the parent is just
+        returned as context. With no chunking a whole file is one chunk, so there's no fixed size.
+        """
+        if self.strategy == "hierarchical":
+            return self.child_tokens
+        if self.strategy == "none":
+            return None
+        return self.max_tokens
 
     def describe(self) -> str:
         """Short text for the UI, e.g. ``Fixed size · 300 tokens, 20% overlap``."""
@@ -262,18 +340,13 @@ class Chunking:
         return {"chunkingStrategy": "NONE"}
 
     def to_dict(self) -> Dict[str, Any]:
-        """How this chunking is written in a YAML config (only the fields that matter)."""
-        relevant = {
-            "fixed": ("max_tokens", "overlap_percent"),
-            "hierarchical": ("parent_tokens", "child_tokens", "overlap_tokens"),
-            "semantic": ("max_tokens", "buffer_size", "breakpoint_threshold"),
-            "none": (),
-        }[self.strategy]
+        """How this chunking is written in a config file (only the settings its strategy uses)."""
+        relevant = CHUNKING_SETTINGS[self.strategy]
         return {"strategy": self.strategy, **{key: getattr(self, key) for key in relevant}}
 
 
 def coerce_chunking(value: Any) -> Chunking:
-    """Accept ``None``, a strategy name like ``"semantic"``, a dict from YAML, or a Chunking."""
+    """Accept ``None``, a strategy name like ``"semantic"``, a dict from a config file, or a Chunking."""
     if value is None:
         return Chunking.fixed()
     if isinstance(value, Chunking):
@@ -290,7 +363,7 @@ def coerce_chunking(value: Any) -> Chunking:
             raise ValueError(f"Unknown chunking {value!r}. Use one of: {', '.join(presets)}")
         return presets[value]()
     if isinstance(value, dict):
-        return Chunking(**value)
+        return Chunking.from_dict(value)
     raise ValueError(f"Can't read chunking config {value!r}")
 
 
@@ -401,7 +474,7 @@ class KBSpec:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> KBSpec:
-        """Build a spec from a plain dict (e.g. parsed YAML), with a clear error for typos."""
+        """Build a spec from a plain dict (e.g. a parsed YAML or JSON file), with a clear error for typos."""
         data = dict(data)
         known = set(cls.__dataclass_fields__)
         unknown = set(data) - known
@@ -410,12 +483,45 @@ class KBSpec:
         return cls(**data)
 
     @classmethod
-    def from_yaml(cls, path: Union[str, Path]) -> KBSpec:
-        """Load a spec from a YAML file. See ``examples/kb.yaml`` for the format."""
-        import yaml
+    def from_file(cls, path: Union[str, Path]) -> KBSpec:
+        """Load a spec from a ``.yaml``/``.yml`` or ``.json`` file, picking the format from the extension.
 
-        with open(path) as fh:
-            return cls.from_dict(yaml.safe_load(fh) or {})
+        See ``examples/kb.yaml`` and ``examples/kb.json``; both formats take exactly the same keys.
+        """
+        return cls._load(path, config_format(path))
+
+    @classmethod
+    def from_yaml(cls, path: Union[str, Path]) -> KBSpec:
+        """Load a spec from a YAML file, whatever its extension. See ``examples/kb.yaml``."""
+        return cls._load(path, "yaml")
+
+    @classmethod
+    def from_json(cls, path: Union[str, Path]) -> KBSpec:
+        """Load a spec from a JSON file, whatever its extension. See ``examples/kb.json``."""
+        return cls._load(path, "json")
+
+    @classmethod
+    def _load(cls, path: Union[str, Path], fmt: str) -> KBSpec:
+        """Read and parse a config file, turning parse problems into errors that point at the line."""
+        path = Path(path)
+        text = path.read_text()
+        if fmt == "json":
+            try:
+                data = json.loads(text) if text.strip() else {}
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"{path} isn't valid JSON: {exc.msg} (line {exc.lineno}, column {exc.colno})."
+                ) from exc
+        else:
+            import yaml
+
+            try:
+                data = yaml.safe_load(text) or {}
+            except yaml.YAMLError as exc:
+                raise ValueError(f"{path} isn't valid YAML: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ValueError(f"{path} should hold one object with keys such as name and source.")
+        return cls.from_dict(data)
 
     def to_dict(self) -> Dict[str, Any]:
         """The spec as a plain dict, leaving out values that are just defaults."""
@@ -440,3 +546,22 @@ class KBSpec:
         import yaml
 
         return yaml.safe_dump(self.to_dict(), sort_keys=False)
+
+    def to_json(self) -> str:
+        """The spec as pretty-printed JSON text, for teams and tools that prefer JSON to YAML."""
+        return json.dumps(self.to_dict(), indent=2) + "\n"
+
+    def to_text(self, path: Union[str, Path]) -> str:
+        """The spec in whichever format ``path``'s extension asks for (YAML or JSON)."""
+        return self.to_json() if config_format(path) == "json" else self.to_yaml()
+
+
+def config_format(path: Union[str, Path]) -> str:
+    """``"yaml"`` or ``"json"`` for a config path, judged by its extension.
+
+    Raises a friendly error for anything else, rather than guessing and failing on the parse.
+    """
+    suffix = Path(path).suffix.lower()
+    if suffix not in CONFIG_FORMATS:
+        raise ValueError(f"Can't tell the format of {str(path)!r}: config files must end in .yaml, .yml or .json.")
+    return CONFIG_FORMATS[suffix]

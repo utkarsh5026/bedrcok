@@ -7,6 +7,7 @@ What we check:
 
 * your AWS credentials work (and which account/region you're in),
 * the embedding model can actually be invoked (catches "model access not enabled"),
+* chunks aren't longer than the embedding model can read,
 * the source bucket exists, is in the right region, and contains files Bedrock can read,
 * the chosen vector store is available,
 * a role you supplied trusts Bedrock.
@@ -98,6 +99,26 @@ def _check_model(spec: KBSpec, aws: Aws) -> Check:
         else:
             hint = error_message(exc)
         return Check(FAIL, title, hint)
+
+
+def _check_chunk_size(spec: KBSpec) -> Optional[Check]:
+    """Warn when chunks are longer than the embedding model reads, so their ends would be lost.
+
+    Bedrock accepts chunks of up to 8,192 tokens whatever the model, but the Cohere models only
+    read the first 512 tokens of each one. Nothing fails; search just never sees the rest of
+    every long chunk, which is a confusing way to get poor answers. Silent when everything fits.
+    """
+    model, size = spec.model, spec.chunking.embedded_tokens
+    if size is None or model.max_input_tokens is None or size <= model.max_input_tokens:
+        return None
+    setting = "child_tokens" if spec.chunking.strategy == "hierarchical" else "max_tokens"
+    return Check(
+        WARN,
+        "Chunk size",
+        f"Chunks of up to {size} tokens are longer than {model.label} reads ({model.max_input_tokens} tokens), "
+        f"so the end of each long chunk won't be searchable. Set chunking {setting} to "
+        f"{model.max_input_tokens} or less, or use titan-v2.",
+    )
 
 
 def scan_s3(aws: Aws, bucket: str, prefix: str) -> SourceScan:
@@ -248,6 +269,9 @@ def run_checks(spec: KBSpec, aws: Aws, identity_only: bool = False) -> List[Chec
     if ident.status == FAIL or identity_only:
         return [ident]
     checks = [ident, _check_model(spec, aws)]
+    chunk_size = _check_chunk_size(spec)
+    if chunk_size:
+        checks.append(chunk_size)
     if isinstance(spec.source, S3Source):
         checks += _check_s3_source(spec.source, aws)
     else:

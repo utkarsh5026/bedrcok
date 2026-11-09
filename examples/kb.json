@@ -1,0 +1,20 @@
+{
+  "name": "hr-policies",
+  "region": "us-east-1",
+  "description": "HR policy documents for the internal assistant",
+  "source": {
+    "s3": "s3://my-company-docs/hr/"
+  },
+  "embedding": "titan-v2",
+  "dimensions": 1024,
+  "vector_store": "s3_vectors",
+  "chunking": {
+    "strategy": "fixed",
+    "max_tokens": 300,
+    "overlap_percent": 20
+  },
+  "sync": true,
+  "tags": {
+    "team": "people-ops"
+  }
+}
