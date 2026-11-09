@@ -101,13 +101,14 @@ class Aws:
         """An OpenSearch client for a Serverless collection, signing requests with these credentials.
 
         boto3 can create a collection but not the vector index inside it; that takes the
-        OpenSearch API itself, hence the optional ``opensearch-py`` dependency.
+        OpenSearch API itself, hence the ``opensearch-py`` dependency.
         """
         try:
             from opensearchpy import AWSV4SignerAuth, OpenSearch, RequestsHttpConnection
         except ImportError as exc:
             raise KBForgeError(
-                "OpenSearch Serverless needs: pip install 'kbforge[opensearch]', then restart the kernel."
+                "The OpenSearch client is missing. Run %pip install --upgrade kbforge (it includes opensearch-py), "
+                "then restart the kernel."
             ) from exc
         auth = AWSV4SignerAuth(self.session.get_credentials(), self.region, "aoss")
         return OpenSearch(

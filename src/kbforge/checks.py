@@ -280,7 +280,8 @@ def _check_vector_store(spec: KBSpec, aws: Aws) -> Check:
         return Check(
             FAIL,
             "Vector store · OpenSearch Serverless",
-            "Needs the OpenSearch client: pip install 'kbforge[opensearch]', then restart the kernel.",
+            "The OpenSearch client is missing. Run %pip install --upgrade kbforge (it includes opensearch-py), "
+            "then restart the kernel.",
         )
     return Check(
         OK,

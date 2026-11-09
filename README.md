@@ -32,7 +32,7 @@ Creating a Bedrock knowledge base by hand means an S3 Vectors bucket (or an Open
 kbforge turns that into **describe → plan → apply → ask**:
 
 ```python
-%pip install -q "kbforge[notebook] @ git+https://github.com/utkarsh5026/bedrcok.git"
+%pip install -q "kbforge @ git+https://github.com/utkarsh5026/bedrcok.git"
 
 from kbforge import KnowledgeBase
 
@@ -175,7 +175,7 @@ Every AWS resource is a step that is first **inspected** (never changed) and the
 | --- | --- | --- |
 | `source` | *required* | `s3://bucket/prefix/`, `https://site`, `S3Source`, `WebSource` |
 | `embedding` | `titan-v2` | `titan-v2`, `cohere-en`, `cohere-multi`, `titan-v1` |
-| `vector_store` | `s3_vectors` | `s3_vectors`, `opensearch_serverless` (needs `kbforge[opensearch]`) |
+| `vector_store` | `s3_vectors` | `s3_vectors`, `opensearch_serverless` |
 | `chunking` | `fixed` (300 tokens, 20%) | `fixed`, `hierarchical`, `semantic`, `none`, or `Chunking.fixed(500, 10)` |
 | `parsing` | `default` (plain text) | `default`, `data_automation`, or a parsing model such as `nova-lite`; `kbforge.parsing_models()` lists the ones your account can use |
 | `role_arn` | create one | an existing role that trusts `bedrock.amazonaws.com` |
@@ -214,7 +214,7 @@ git commit -am "Release v$(uv version --short)" && git push
 git tag "v$(uv version --short)" && git push origin "v$(uv version --short)"
 ```
 
-Then install a pinned version with `pip install "kbforge[notebook] @ git+https://github.com/utkarsh5026/bedrcok.git@v0.2.0"`.
+Then install a pinned version with `pip install "kbforge @ git+https://github.com/utkarsh5026/bedrcok.git@v0.2.0"`.
 
 See [CLAUDE.md](CLAUDE.md) for how the code is organised.
 

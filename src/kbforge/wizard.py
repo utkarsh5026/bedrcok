@@ -138,7 +138,8 @@ class Wizard:
             from .ui.choices import Choice, OptionCards
         except ImportError as exc:
             raise ImportError(
-                "The wizard needs ipywidgets: pip install 'kbforge[notebook]', then restart the kernel."
+                "The wizard needs ipywidgets, which is missing. Run %pip install --upgrade kbforge (it includes "
+                "ipywidgets), then restart the kernel."
             ) from exc
         self.w = w
         self.OptionCards = OptionCards

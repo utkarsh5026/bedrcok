@@ -45,7 +45,7 @@
     },
     {
       kind: "cell", dur: 6, chapter: "Install", label: "Install",
-      code: '%pip install -q "kbforge[notebook] @ git+https://github.com/utkarsh5026/bedrcok.git"',
+      code: '%pip install -q "kbforge @ git+https://github.com/utkarsh5026/bedrcok.git"',
       outputs: [{ text: '<span class="ok">✓</span> Successfully installed kbforge-0.1.0' }],
       captions: [[0, "<b>Install</b> once, in any SageMaker or Jupyter notebook."]],
     },
