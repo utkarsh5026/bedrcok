@@ -201,6 +201,7 @@ WIZARD_CSS = """
 .kbf-wiz .code2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0; }
 .kbf-wiz .code2 .section { border-bottom: 0; }
 .kbf-wiz .code2 .section + .section { border-left: 1px solid var(--kbf-border); }
+.kbf-wiz .code2 pre + h3 { margin-top: 16px; }
 .kbf-wiz .loading { display: flex; gap: 14px; align-items: center; padding: 22px 20px; }
 .kbf-wiz .loading .spin { width: 22px; height: 22px; border-width: 3px; margin: 0; }
 .kbf-wiz .try { margin: 18px 0 0; padding: 18px 20px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--kbf-green) 35%, var(--kbf-border));

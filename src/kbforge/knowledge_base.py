@@ -162,11 +162,33 @@ class KnowledgeBase:
         return kb
 
     @classmethod
+    def from_file(
+        cls, path: Union[str, Path], region: Optional[str] = None, session: Optional[boto3.Session] = None
+    ) -> KnowledgeBase:
+        """Load a knowledge base definition from a ``.yaml``/``.yml`` or ``.json`` file.
+
+        The format comes from the extension; see ``examples/kb.yaml`` and ``examples/kb.json``.
+        ``region`` overrides the one in the file, handy for building the same KB elsewhere.
+        """
+        return cls._from_loaded(KBSpec.from_file(path), region, session)
+
+    @classmethod
     def from_yaml(
         cls, path: Union[str, Path], region: Optional[str] = None, session: Optional[boto3.Session] = None
     ) -> KnowledgeBase:
         """Load a knowledge base definition from YAML (see ``examples/kb.yaml``)."""
-        spec = KBSpec.from_yaml(path)
+        return cls._from_loaded(KBSpec.from_yaml(path), region, session)
+
+    @classmethod
+    def from_json(
+        cls, path: Union[str, Path], region: Optional[str] = None, session: Optional[boto3.Session] = None
+    ) -> KnowledgeBase:
+        """Load a knowledge base definition from JSON (see ``examples/kb.json``)."""
+        return cls._from_loaded(KBSpec.from_json(path), region, session)
+
+    @classmethod
+    def _from_loaded(cls, spec: KBSpec, region: Optional[str], session: Optional[boto3.Session]) -> KnowledgeBase:
+        """Apply an optional region override to a spec read from a file, then wrap it."""
         if region:
             spec.region = region
         return cls.from_spec(spec, session)
@@ -270,10 +292,18 @@ class KnowledgeBase:
         """This knowledge base's definition as YAML."""
         return self.spec.to_yaml()
 
+    def to_json(self) -> str:
+        """This knowledge base's definition as JSON."""
+        return self.spec.to_json()
+
     def save(self, path: Union[str, Path]) -> Path:
-        """Write the definition to a YAML file so it can be committed and reused."""
+        """Write the definition to a file so it can be committed and reused.
+
+        A ``.json`` path is written as JSON; ``.yaml``/``.yml`` as YAML. Load it again with
+        ``KnowledgeBase.from_file(path)``.
+        """
         path = Path(path)
-        path.write_text(self.to_yaml())
+        path.write_text(self.spec.to_text(path))
         return path
 
     def _locate(self, data_source: bool = True) -> Ctx:

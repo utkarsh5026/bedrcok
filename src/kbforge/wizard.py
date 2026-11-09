@@ -654,12 +654,14 @@ class Wizard:
         python = "from kbforge import KnowledgeBase\n\nkb = KnowledgeBase(\n" + "\n".join(args) + "\n)\nkb.plan()"
         self.code.value = card(
             '<div class="head"><div class="eyebrow">kbforge · as code</div><h2>The same knowledge base, in code</h2>'
-            '<div class="muted">Paste it into a cell, or commit the YAML and run <code>kbforge plan kb.yaml</code>.'
-            "</div></div>"
+            '<div class="muted">Paste it into a cell, or commit the YAML or JSON file and run '
+            "<code>kbforge plan kb.yaml</code> (or <code>kb.json</code>).</div></div>"
             '<div class="code2"><div class="section"><h3>Python</h3><pre><code>'
             + esc(python)
             + '</code></pre></div><div class="section"><h3>Or save as kb.yaml</h3><pre><code>'
             + esc(kb.to_yaml())
+            + "</code></pre><h3>Or as kb.json</h3><pre><code>"
+            + esc(kb.to_json())
             + "</code></pre></div></div>"
         )
         self.code_btn.description = "Hide code"

@@ -1,39 +1,125 @@
 # A knowledge base described as config. Commit this next to your project and run:
-#   kbforge plan examples/kb.yaml
-#   kbforge apply examples/kb.yaml
-# or in a notebook:  KnowledgeBase.from_yaml("examples/kb.yaml").plan()
+#   kbforge plan  examples/kb.yaml      # read-only: checks + what would be built
+#   kbforge apply examples/kb.yaml      # build it (asks first)
+# or in a notebook:
+#   KnowledgeBase.from_file("examples/kb.yaml").plan()
+#
+# The same settings work as JSON: see kb.json next to this file and README.md for the
+# JSON version of every chunking strategy.
+#
+# Only `name` and `source` are required. Everything else below shows its default unless
+# a comment says otherwise. Lines starting with `#` are alternatives you can switch to.
 
+
+# Name of the knowledge base. Letters, digits, '-' or '_', no two separators in a row,
+# up to 100 characters. Every AWS resource name is derived from it, so changing the name
+# means a brand-new knowledge base.
 name: hr-policies
+
+# AWS region to build in. Leave it out to use your profile's / SageMaker's region.
+# Keep it the same as your S3 bucket's region.
 region: us-east-1
+
+# Optional free text shown in the Bedrock console.
 description: HR policy documents for the internal assistant
 
-# Where the documents live. Either an S3 location...
+
+# Where the documents live. Use exactly ONE of the two forms.
+#
+# 1) An S3 folder. Everything under the prefix is ingested; leave the prefix off to use
+#    the whole bucket. Supported files: .pdf .docx .doc .txt .md .html .csv .xls .xlsx,
+#    each up to 50 MB.
 source:
   s3: s3://my-company-docs/hr/
-# ...or a list of sites to crawl:
-# source:
-#   web: [https://docs.example.com]
-#   scope: HOST_ONLY        # or SUBDOMAINS
-#   max_pages: 500
 
-# titan-v2 (default) | cohere-en | cohere-multi | titan-v1
+# 2) Public web pages, fetched by Bedrock's crawler. Only crawl sites you're allowed to.
+# source:
+#   web:                         # one or more seed URLs
+#     - https://docs.example.com
+#   scope: HOST_ONLY             # HOST_ONLY (default) | SUBDOMAINS
+#   max_pages: 500               # optional cap on pages crawled
+#   rate_limit: 300              # pages per minute per host (default 300)
+#   include: [".*/handbook/.*"]  # optional regexes: only crawl matching URLs
+#   exclude: [".*\\.pdf$"]        # optional regexes: skip matching URLs
+
+
+# Embedding model: turns each chunk into a vector. Can't be changed after the KB exists.
+#   titan-v2      Amazon Titan Text Embeddings V2. Cheap, multilingual. (default)
+#   cohere-en     Cohere Embed English v3. Best quality for English-only documents.
+#   cohere-multi  Cohere Embed Multilingual v3. Many languages mixed together.
+#   titan-v1      Legacy; prefer titan-v2.
+# A raw Bedrock model id also works if you set `dimensions` too.
 embedding: titan-v2
+
+# Vector size. Only titan-v2 lets you choose: 256 | 512 | 1024 (default 1024).
+# Smaller is cheaper to store and slightly less accurate. The other models are fixed
+# (cohere: 1024, titan-v1: 1536), so leave this out for them.
 dimensions: 1024
 
-# s3_vectors (default, cheapest, serverless) | opensearch_serverless
+
+# Where the vectors are stored. Can't be changed after the KB exists.
+#   s3_vectors             Amazon S3 Vectors: serverless, pay per GB and per query. (default)
+#   opensearch_serverless  Lower latency, but has a minimum hourly cost even when idle.
+#                          Needs: pip install "kbforge[opensearch]"
 vector_store: s3_vectors
 
-# fixed (default) | hierarchical | semantic | none
+
+# How documents are cut into chunks before embedding. Pick ONE strategy and give only
+# that strategy's settings; a setting from a different strategy is reported as an error.
+# Any setting you leave out keeps the default shown. Values outside the ranges below
+# are rejected before anything is built. Chunking is fixed once the data source exists:
+# to try another strategy, use a new `name` and compare with kb.ask().
+#
+# A "token" is roughly three-quarters of a word. Chunks should fit the embedding model:
+# titan-v2 reads up to 8,192 tokens, the cohere models only 512 (the plan warns if not).
+
+# Fixed size (default): equal-sized chunks that overlap a little. A safe choice for most
+# document sets.
 chunking:
   strategy: fixed
-  max_tokens: 300
-  overlap_percent: 20
+  max_tokens: 300          # 1-8192: size of each chunk
+  overlap_percent: 20      # 1-99: how much of each chunk is repeated in the next one
 
-# Optional: reuse a role your admin already made instead of creating one.
+# Hierarchical: search runs over small "child" chunks, but the bigger "parent" chunk
+# around the match is what gets returned, so answers keep their context. Good for long,
+# structured documents such as policies, manuals and contracts.
+# chunking:
+#   strategy: hierarchical
+#   parent_tokens: 1500    # 1-8192: the context returned with each match
+#   child_tokens: 300      # smaller than parent_tokens: what is embedded and searched
+#   overlap_tokens: 60     # 1 or more, smaller than child_tokens: tokens repeated
+#                          # between neighbouring chunks
+
+# Semantic: splits where the topic changes instead of every N tokens. Better chunks when
+# topics don't line up with paragraphs, but each sync makes extra model calls (slower,
+# costs more).
+# chunking:
+#   strategy: semantic
+#   max_tokens: 300            # 1-8192: upper limit on a chunk's size
+#   buffer_size: 0             # 0 or 1: sentences either side compared with each one
+#   breakpoint_threshold: 95   # 50-99: higher means fewer splits and bigger chunks
+
+# None: every file becomes one chunk. Only for files that are already small (FAQ
+# entries, short notes); anything longer than the model's limit gets cut off.
+# chunking:
+#   strategy: none
+
+
+# The IAM role Bedrock uses to read your documents and write vectors. Leave it out and
+# kbforge creates one. If your account doesn't let you create roles, ask an admin for one
+# that trusts bedrock.amazonaws.com and paste its ARN here. Its name must start with
+# AmazonBedrockExecutionRoleForKnowledgeBase_ for Bedrock's managed policies to accept it.
 # role_arn: arn:aws:iam::123456789012:role/AmazonBedrockExecutionRoleForKnowledgeBase_hr
 
-# Run the first ingestion right after creating everything.
+# Only if your organisation requires a permissions boundary on every new role.
+# permissions_boundary: arn:aws:iam::123456789012:policy/MyBoundary
+
+
+# Run the first ingestion as part of `apply`. Set to false to build everything now and
+# run `kbforge sync` (or kb.sync()) later.
 sync: true
 
+# Extra tags on everything kbforge creates. kbforge always adds `managed-by: kbforge`,
+# which is how `destroy` knows what it's allowed to delete.
 tags:
   team: people-ops

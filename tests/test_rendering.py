@@ -50,3 +50,7 @@ def test_cli_models_and_init(tmp_path, capsys):
     assert main(["init", str(target)]) == 0
     assert kbforge.KBSpec.from_yaml(target).name == "my-knowledge-base"
     assert main(["init", str(target)]) == 1  # refuses to overwrite
+
+    json_target = tmp_path / "kb.json"
+    assert main(["init", str(json_target)]) == 0
+    assert kbforge.KBSpec.from_file(json_target) == kbforge.KBSpec.from_file(target)
