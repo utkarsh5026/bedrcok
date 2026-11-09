@@ -19,6 +19,8 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
+from .errors import did_you_mean
+
 
 @dataclass(frozen=True)
 class EmbeddingModel:
@@ -108,7 +110,7 @@ def resolve_model(name: str, dimensions: Optional[int] = None) -> EmbeddingModel
         known = ", ".join(EMBEDDING_MODELS)
         raise ValueError(
             f"Unknown embedding model {name!r}. Use one of: {known}, "
-            "or pass a raw model id together with dimensions=..."
+            f"or pass a raw model id together with dimensions=....{did_you_mean(name, EMBEDDING_MODELS)}"
         )
     return EmbeddingModel(name, name, name, (dimensions,), dimensions)
 
@@ -228,7 +230,7 @@ def resolve_parsing_model(name: str) -> ParsingModel:
         raise ValueError(
             f"Unknown parsing model {name!r}. Use one of: {', '.join(PARSING_MODELS)}, or a Bedrock model id "
             "such as 'anthropic.claude-3-haiku-20240307-v1:0'. Run kbforge.parsing_models() to see what your "
-            "account can use."
+            f"account can use.{did_you_mean(name, PARSING_MODELS)}"
         )
     prefix, _, rest = name.partition(".")
     profile = prefix if prefix in PROFILE_PREFIXES else ""

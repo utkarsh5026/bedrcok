@@ -20,6 +20,7 @@ The same tasks are wrapped by `make` (see `make help`): `make check` runs lint, 
 - `src/kbforge/spec.py`: `KBSpec` (what the user wants), `S3Source`/`WebSource`, `Parsing`, `Chunking`, and `Names` (every AWS name, derived deterministically from the KB name; this is why there's no state file).
 - `src/kbforge/models.py`: catalogues of embedding models (alias → model id, dimensions) and parsing models (alias → model id, called through the region's cross-region inference profile).
 - `src/kbforge/parsers.py`: `list_parsing_models()` asks Bedrock which vision models in the region can parse documents (`kbforge.parsing_models()`, `kbforge parsers`), falling back to the catalogue when listing isn't allowed.
+- `src/kbforge/errors.py`: `KBForgeError` (shown in IPython as just its message, no traceback) and `did_you_mean()` for typo hints in validation errors.
 - `src/kbforge/aws.py`: `Aws` wrapper (cached clients, identity, SageMaker assumed-role → role ARN), plus `wait_for` and `retry_on` for eventual consistency.
 - `src/kbforge/checks.py`: preflight checks (credentials, model invoke, S3 scan, vector store, user-supplied role). A `fail` blocks apply.
 - `src/kbforge/steps/`: one `Step` per AWS resource. `base.py` defines `Step`/`Action`/`Inspection`/`Ctx`; `iam.py`, `s3_vectors.py`, `opensearch.py` and `bedrock.py` implement them; `build_steps()` sets the order.
@@ -42,7 +43,7 @@ Different KB names can share AWS names (`HR_Policies` and `hr-policies` both slu
 - Every module, class and public function gets a **plain-English docstring** a newcomer can follow: say what it's for and why, not just what it does.
 - **No banner/divider comments** (`# ---- section ----`, `# ====`). Organise with files and classes instead. Short inline comments that explain *why* are fine.
 - Prefer clear names over cleverness; keep `typing.Optional`/`List` style (ruff UP006/UP007 are ignored on purpose).
-- User-facing messages say what to do next ("Run kb.apply() again — finished steps are skipped"), not just what went wrong. AWS errors go through `explain_error()`.
+- User-facing messages say what to do next ("Run kb.apply() again — finished steps are skipped"), not just what went wrong. AWS errors go through `explain_error()`; notebook methods that call AWS directly wrap it in `friendly_aws_errors()`, and the CLI's `main()` catches botocore errors the same way.
 - All HTML output must escape user/AWS content with `esc()` and live inside `card()` so styles stay scoped to `.kbf`.
 
 ## Gotchas

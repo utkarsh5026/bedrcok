@@ -14,14 +14,17 @@ Typical notebook session::
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
 import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 
 from .aws import Aws
+from .errors import KBForgeError, did_you_mean
 from .parsers import ParsingModels, list_parsing_models
 from .plan import ApplyResult, Plan, make_plan
 from .spec import VECTOR_STORES, Chunking, KBSpec, Parsing, Source
@@ -33,10 +36,6 @@ STORE_LABELS = {
     "S3_VECTORS": VECTOR_STORES["s3_vectors"],
     "OPENSEARCH_SERVERLESS": VECTOR_STORES["opensearch_serverless"],
 }
-
-
-class KBForgeError(RuntimeError):
-    """A problem the user can fix, with a message that says how."""
 
 
 @dataclass
@@ -136,7 +135,10 @@ class KnowledgeBase:
         tags: Optional[Dict[str, str]] = None,
         sync: bool = True,
         session: Optional[boto3.Session] = None,
+        **unknown: Any,
     ):
+        if unknown:
+            raise TypeError(_unknown_options_message(unknown))
         spec = KBSpec(
             name=name,
             source=source,  # type: ignore[arg-type]  # coerced in KBSpec.__post_init__
@@ -212,7 +214,8 @@ class KnowledgeBase:
 
     def plan(self) -> Plan:
         """Check everything and show what ``apply()`` would do. Never changes anything in AWS."""
-        return make_plan(self.spec, self.aws)
+        with friendly_aws_errors():
+            return make_plan(self.spec, self.aws)
 
     def apply(self) -> Union[ApplyResult, Plan]:
         """Build (or finish building) the knowledge base, showing live progress.
@@ -229,7 +232,8 @@ class KnowledgeBase:
         """Re-ingest the data source (after documents were added, changed or removed)."""
         from .ui.progress import Progress
 
-        ctx = self._locate()
+        with friendly_aws_errors():
+            ctx = self._locate()
         if not ctx.out.get("ds_id"):
             raise KBForgeError(f"'{self.name}' hasn't been created yet. Run kb.plan() and kb.apply() first.")
         progress = Progress(f"Syncing {self.name}", [("Ingestion", self.spec.source.describe())], self.name)
@@ -249,18 +253,24 @@ class KnowledgeBase:
         This is retrieval only (no LLM answer), which is the quickest way to judge whether
         chunking and embeddings are working for your documents.
         """
-        ctx = self._locate(data_source=False)
-        if not ctx.out.get("kb_id"):
-            raise KBForgeError(f"'{self.name}' hasn't been created yet. Run kb.apply() first.")
-        response = self.aws.client("bedrock-agent-runtime").retrieve(
-            knowledgeBaseId=ctx.out["kb_id"],
-            retrievalQuery={"text": question},
-            retrievalConfiguration={"vectorSearchConfiguration": {"numberOfResults": top_k}},
-        )
+        with friendly_aws_errors():
+            ctx = self._locate(data_source=False)
+            if not ctx.out.get("kb_id"):
+                raise KBForgeError(f"'{self.name}' hasn't been created yet. Run kb.apply() first.")
+            response = self.aws.client("bedrock-agent-runtime").retrieve(
+                knowledgeBaseId=ctx.out["kb_id"],
+                retrievalQuery={"text": question},
+                retrievalConfiguration={"vectorSearchConfiguration": {"numberOfResults": top_k}},
+            )
         return Answers(question, self.name, response.get("retrievalResults", []))
 
     def status(self) -> Status:
         """Where things stand: ids, health, and how the last sync went."""
+        with friendly_aws_errors():
+            return self._status()
+
+    def _status(self) -> Status:
+        """``status()`` without the error translation, so the lookups read top to bottom."""
         kb = KnowledgeBaseStep().find(Ctx(self.spec, self.aws))
         if kb is None:
             return Status(self.name, self.aws.region, exists=False)
@@ -304,7 +314,8 @@ class KnowledgeBase:
         weren't created by kbforge are kept unless ``force=True``. Your source documents are
         never touched.
         """
-        plan = make_plan(self.spec, self.aws, mode="destroy", force=force)
+        with friendly_aws_errors():
+            plan = make_plan(self.spec, self.aws, mode="destroy", force=force)
         if not confirm or not plan.ready:
             return plan
         return plan.apply()
@@ -346,3 +357,24 @@ class KnowledgeBase:
         from .ui.html import render_spec
 
         return render_spec(self.spec)
+
+
+@contextmanager
+def friendly_aws_errors() -> Iterator[None]:
+    """Turn AWS/botocore exceptions raised inside the block into a ``KBForgeError`` that says what to do.
+
+    Without this, an expired session or a missing permission shows up in a notebook as a long
+    botocore stack trace. The original exception stays attached as ``__cause__`` for debugging.
+    """
+    try:
+        yield
+    except (ClientError, BotoCoreError) as exc:
+        raise KBForgeError(explain_error(exc)) from exc
+
+
+def _unknown_options_message(unknown: Dict[str, Any]) -> str:
+    """Explain keyword arguments ``KnowledgeBase()`` doesn't take, suggesting the likely intended ones."""
+    valid = [*KBSpec.__dataclass_fields__, "session"]
+    hints = "".join(did_you_mean(key, valid) for key in sorted(unknown))
+    names = ", ".join(sorted(unknown))
+    return f"KnowledgeBase() doesn't take: {names}.{hints} Valid options: {', '.join(valid)}."

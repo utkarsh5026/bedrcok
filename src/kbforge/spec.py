@@ -17,7 +17,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-from .models import DEFAULT_PARSING_MODEL, EmbeddingModel, ParsingModel, resolve_model, resolve_parsing_model
+from .errors import did_you_mean
+from .models import (
+    DEFAULT_PARSING_MODEL,
+    PARSING_MODELS,
+    EmbeddingModel,
+    ParsingModel,
+    resolve_model,
+    resolve_parsing_model,
+)
 
 #: Vector stores kbforge can set up, with the name shown in the UI.
 VECTOR_STORES = {
@@ -266,11 +274,15 @@ class Chunking:
         strategy = data.pop("strategy", "fixed")
         allowed = CHUNKING_SETTINGS.get(strategy)
         if allowed is None:
-            raise ValueError(f"chunking strategy must be one of: {', '.join(CHUNKING_SETTINGS)}, got {strategy!r}")
+            raise ValueError(
+                f"chunking strategy must be one of: {', '.join(CHUNKING_SETTINGS)}, got {strategy!r}."
+                f"{did_you_mean(strategy, CHUNKING_SETTINGS)}"
+            )
         unexpected = sorted(set(data) - set(allowed))
         if unexpected:
             hint = f"its settings are: {', '.join(allowed)}" if allowed else "it takes no other settings"
-            raise ValueError(f"{', '.join(unexpected)} can't be used with {strategy} chunking; {hint}.")
+            hints = "".join(did_you_mean(key, allowed) for key in unexpected)
+            raise ValueError(f"{', '.join(unexpected)} can't be used with {strategy} chunking; {hint}.{hints}")
         return cls(strategy, **data)
 
     def __post_init__(self) -> None:
@@ -370,7 +382,9 @@ def coerce_chunking(value: Any) -> Chunking:
             "none": Chunking.none,
         }
         if value not in presets:
-            raise ValueError(f"Unknown chunking {value!r}. Use one of: {', '.join(presets)}")
+            raise ValueError(
+                f"Unknown chunking {value!r}. Use one of: {', '.join(presets)}.{did_you_mean(value, presets)}"
+            )
         return presets[value]()
     if isinstance(value, dict):
         return Chunking.from_dict(value)
@@ -423,12 +437,18 @@ class Parsing:
         strategy = data.pop("strategy", "default")
         unexpected = sorted(set(data) - {"model", "prompt"})
         if unexpected:
-            raise ValueError(f"Unknown parsing settings: {', '.join(unexpected)}. Valid settings: model, prompt.")
+            hints = "".join(did_you_mean(key, ("model", "prompt")) for key in unexpected)
+            raise ValueError(
+                f"Unknown parsing settings: {', '.join(unexpected)}. Valid settings: model, prompt.{hints}"
+            )
         return cls(strategy, **data)
 
     def __post_init__(self) -> None:
         if self.strategy not in PARSING_STRATEGIES:
-            raise ValueError(f"parsing strategy must be one of: {', '.join(PARSING_STRATEGIES)}, got {self.strategy!r}")
+            raise ValueError(
+                f"parsing strategy must be one of: {', '.join(PARSING_STRATEGIES)}, got {self.strategy!r}."
+                f"{did_you_mean(self.strategy, PARSING_STRATEGIES)}"
+            )
         if self.strategy != "foundation_model":
             used = [key for key in ("model", "prompt") if getattr(self, key)]
             if used:
@@ -511,6 +531,7 @@ def coerce_parsing(value: Any) -> Parsing:
             raise ValueError(
                 f"Unknown parsing {value!r}. Use one of: {', '.join(PARSING_STRATEGIES)}, or a parsing model "
                 "such as 'nova-lite'. Run kbforge.parsing_models() to see the models your account can use."
+                f"{did_you_mean(value, [*PARSING_STRATEGIES, *PARSING_MODELS])}"
             ) from None
     if isinstance(value, dict):
         return Parsing.from_dict(value)
@@ -579,7 +600,10 @@ class KBSpec:
         self.parsing = coerce_parsing(self.parsing)
         store = _VECTOR_STORE_ALIASES.get(str(self.vector_store).lower())
         if store is None:
-            raise ValueError(f"vector_store must be one of {list(VECTOR_STORES)}, got {self.vector_store!r}")
+            raise ValueError(
+                f"vector_store must be one of {list(VECTOR_STORES)}, got {self.vector_store!r}."
+                f"{did_you_mean(self.vector_store, VECTOR_STORES)}"
+            )
         self.vector_store = store
         if not KB_NAME_RE.match(self.name):
             raise ValueError(
@@ -632,7 +656,8 @@ class KBSpec:
         known = set(cls.__dataclass_fields__)
         unknown = set(data) - known
         if unknown:
-            raise ValueError(f"Unknown config keys: {sorted(unknown)}. Valid keys: {sorted(known)}")
+            hints = "".join(did_you_mean(key, known) for key in sorted(unknown))
+            raise ValueError(f"Unknown config keys: {sorted(unknown)}. Valid keys: {sorted(known)}.{hints}")
         return cls(**data)
 
     @classmethod

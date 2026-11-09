@@ -19,12 +19,15 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+from botocore.exceptions import BotoCoreError, ClientError
+
 from .aws import Aws
 from .knowledge_base import KBForgeError, KnowledgeBase
 from .models import EMBEDDING_MODELS
 from .parsers import known_parsing_models, list_parsing_models
 from .plan import ApplyResult, make_plan
 from .spec import config_format
+from .steps import explain_error
 
 STARTER_YAML = """\
 # Describe your knowledge base, then run:  kbforge plan kb.yaml
@@ -226,6 +229,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     except (KBForgeError, ValueError, FileNotFoundError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    except (ClientError, BotoCoreError) as exc:
+        print(f"error: {explain_error(exc)}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("\nStopped. Anything already built is kept; run the same command again to carry on.", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":
