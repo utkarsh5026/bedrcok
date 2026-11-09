@@ -96,6 +96,7 @@ def test_show_as_code_matches_the_form(wiz):
     wiz.code_btn.click()
 
     assert "KnowledgeBase(" in wiz.code.value and "embedding=&#x27;cohere-multi&#x27;" in wiz.code.value
+    assert "kb.json" in wiz.code.value and "&quot;embedding&quot;: &quot;cohere-multi&quot;" in wiz.code.value
     wiz.code_btn.click()
     assert wiz.code.value == ""
 

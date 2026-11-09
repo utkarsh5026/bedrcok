@@ -1,4 +1,5 @@
-"""Export the animated tour on the docs site as an MP4 (``docs/assets/kbforge-tour.mp4``).
+"""Export the animated tour on the docs site as MP4s (``docs/assets/kbforge-tour.mp4`` and
+``kbforge-tour-dark.mp4``).
 
 Why a separate file: the tour on the GitHub Pages guide is drawn live in the browser by
 ``docs/assets/demo.js`` from the screenshots in ``docs/assets/screens/``. That's ideal on the
@@ -7,7 +8,8 @@ site, but people also want something they can drop into Slack, an email or a sli
 How it works:
 
 1. Opens ``docs/demo.html?record`` in headless Chromium at 1280×720 (rendered at 1.5× for a
-   1920×1080 video). ``?record`` hides the player controls.
+   1920×1080 video). ``?record`` hides the player controls and ``?theme=`` picks the light or
+   dark screenshots, so both versions come from the same tour.
 2. The tour is a pure function of time, so instead of recording in real time (which drops
    frames), it calls ``kbDemo.renderAt(t)`` for every frame and takes a screenshot.
 3. Pipes the frames into ``ffmpeg``, which must be on your PATH, to make an H.264 MP4 that
@@ -18,7 +20,8 @@ Like the screenshot script, it runs ``playwright install chromium`` first unless
 
 Run ``scripts/docs_screenshots.py`` first if the screenshots changed, then:
 
-    uv run --group docs python scripts/docs_video.py
+    uv run --group docs python scripts/docs_video.py                 # both themes
+    uv run --group docs python scripts/docs_video.py --theme dark    # just one
     uv run --group docs python scripts/docs_video.py --chromium /path/to/chrome --fps 30
 """
 
@@ -36,7 +39,9 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE = ROOT / "docs" / "demo.html"
-OUT = ROOT / "docs" / "assets" / "kbforge-tour.mp4"
+OUT_DIR = ROOT / "docs" / "assets"
+#: Theme → file name. The page links the one matching the reader's light/dark setting.
+OUTPUTS = {"light": "kbforge-tour.mp4", "dark": "kbforge-tour-dark.mp4"}
 
 
 def ffmpeg_command(fps: int, out: Path) -> list:
@@ -71,18 +76,18 @@ def ffmpeg_command(fps: int, out: Path) -> list:
     ]
 
 
-def record(fps: int, scale: float, chromium: Optional[str], out: Path) -> None:
-    """Step through the tour frame by frame and encode it."""
+def record(fps: int, scale: float, chromium: Optional[str], theme: str, out: Path) -> None:
+    """Step through the tour in one theme, frame by frame, and encode it."""
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=chromium) if chromium else p.chromium.launch()
         page = browser.new_page(viewport={"width": 1280, "height": 720}, device_scale_factor=scale)
-        page.goto(PAGE.as_uri() + "?record")
+        page.goto(PAGE.as_uri() + f"?record&theme={theme}")
         page.wait_for_function("window.kbDemo !== undefined")
         page.evaluate("async () => { kbDemo.pause(); await kbDemo.ready; await document.fonts.ready; }")
         duration = page.evaluate("kbDemo.duration")
         frames = int(duration * fps)
         screen = page.locator(".screen")
-        print(f"Rendering {frames} frames ({duration:.1f}s at {fps} fps)…")
+        print(f"Rendering the {theme} tour: {frames} frames ({duration:.1f}s at {fps} fps)…")
 
         encoder = subprocess.Popen(ffmpeg_command(fps, out), stdin=subprocess.PIPE)
         assert encoder.stdin is not None
@@ -106,11 +111,13 @@ def main() -> None:
     parser.add_argument("--chromium", help="path to a Chromium binary (default: Playwright's own)")
     parser.add_argument("--fps", type=int, default=30, help="frames per second (default 30)")
     parser.add_argument("--scale", type=float, default=1.5, help="1.5 gives 1920×1080 (default), 1 gives 1280×720")
-    parser.add_argument("--out", type=Path, default=OUT, help=f"output file (default {OUT.relative_to(ROOT)})")
+    parser.add_argument("--theme", choices=[*OUTPUTS, "both"], default="both", help="which theme to export")
     args = parser.parse_args()
     if not args.chromium:
         ensure_browser()
-    record(args.fps, args.scale, args.chromium, args.out.resolve())
+    themes = list(OUTPUTS) if args.theme == "both" else [args.theme]
+    for theme in themes:
+        record(args.fps, args.scale, args.chromium, theme, OUT_DIR / OUTPUTS[theme])
 
 
 if __name__ == "__main__":

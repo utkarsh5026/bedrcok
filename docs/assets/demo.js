@@ -22,6 +22,14 @@
   const CAPTION_ROOM = 96;
   const SHOTS = (document.currentScript && document.currentScript.dataset.shots) || "assets/screens/";
 
+  /* Light or dark: follows the reader's system setting, like the screenshots on the page.
+     `?theme=light` or `?theme=dark` forces one (scripts/docs_video.py uses this). */
+  const FORCED_THEME = (location.search.match(/[?&]theme=(light|dark)\b/) || [])[1];
+  const DARK_QUERY = window.matchMedia("(prefers-color-scheme: dark)");
+  const currentTheme = () => FORCED_THEME || (DARK_QUERY.matches ? "dark" : "light");
+  /* Each screenshot has a -dark twin of the same size, so crops and timings work for both. */
+  const shotUrl = (file, theme) => SHOTS + (theme === "dark" ? file.replace(/\.png$/, "-dark.png") : file);
+
   /* The notebook screenshots show the whole cell (code + output). The tour types the code
      itself, so it crops each screenshot to just the output card: [top, left, right] in image
      pixels. The card always spans the same columns; only where it starts differs. */
@@ -162,8 +170,21 @@
       new ResizeObserver(() => this.fit()).observe(screen);
       this.buildControls();
       screen.addEventListener("click", () => this.toggle());
+      this.setTheme(currentTheme());
+      if (!FORCED_THEME) DARK_QUERY.addEventListener("change", () => this.setTheme(currentTheme()));
+    }
+
+    /* Switch between the light and dark notebook look, keeping the current playback position. */
+    setTheme(theme) {
+      this.theme = theme;
+      // Point "Download as MP4" at the export that matches what's on screen.
+      document.querySelectorAll("a[data-tour-mp4]").forEach((link) => {
+        link.href = link.getAttribute("href").replace(/kbforge-tour(-dark)?\.mp4$/, theme === "dark" ? "kbforge-tour-dark.mp4" : "kbforge-tour.mp4");
+      });
+      this.stage.classList.toggle("dark", theme === "dark");
       this.ready = this.preload();
-      this.renderAt(0);
+      this.sceneIndex = -1; // rebuild the current scene with the other screenshots
+      this.renderAt(this.t);
     }
 
     fit() {
@@ -176,7 +197,7 @@
       SCENES.forEach((s) => (s.outputs || []).forEach((o) => o.img && files.add(o.img)));
       return Promise.all([...files].map((f) => {
         const img = new Image();
-        img.src = SHOTS + f;
+        img.src = shotUrl(f, this.theme);
         return img.decode().catch(() => {});
       }));
     }
@@ -326,7 +347,7 @@
         if (o.img) {
           const [top, left, right] = o.crop || [0, 0, o.w];
           const scale = outWidth / (right - left);
-          el.src = SHOTS + o.img;
+          el.src = shotUrl(o.img, this.theme);
           el.alt = "";
           el.style.width = `${o.w * scale}px`;
           el.style.left = `${-left * scale}px`;

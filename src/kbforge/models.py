@@ -24,6 +24,9 @@ class EmbeddingModel:
     dimensions: Tuple[int, ...]
     default_dimensions: int
     note: str = ""
+    #: The most tokens the model reads from one chunk; anything longer is cut off before
+    #: embedding. ``None`` when we don't know (a raw model id kbforge has no entry for).
+    max_input_tokens: Optional[int] = None
 
     @property
     def configurable_dimensions(self) -> bool:
@@ -55,6 +58,7 @@ EMBEDDING_MODELS = {
             (256, 512, 1024),
             1024,
             "Good default. Cheap, multilingual, 8k token input.",
+            max_input_tokens=8192,
         ),
         EmbeddingModel(
             "cohere-en",
@@ -63,6 +67,7 @@ EMBEDDING_MODELS = {
             (1024,),
             1024,
             "Strong retrieval quality for English-only corpora.",
+            max_input_tokens=512,
         ),
         EmbeddingModel(
             "cohere-multi",
@@ -71,6 +76,7 @@ EMBEDDING_MODELS = {
             (1024,),
             1024,
             "Use when documents mix many languages.",
+            max_input_tokens=512,
         ),
         EmbeddingModel(
             "titan-v1",
@@ -79,6 +85,7 @@ EMBEDDING_MODELS = {
             (1536,),
             1536,
             "Legacy. Prefer titan-v2 for new knowledge bases.",
+            max_input_tokens=8192,
         ),
     ]
 }

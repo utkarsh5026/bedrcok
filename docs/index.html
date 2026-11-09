@@ -43,7 +43,7 @@
       <div class="screen" data-demo="autoplay"></div>
       <div class="controls"></div>
       <div class="chapters"></div>
-      <p class="note">A 90-second tour, recorded from real kbforge output against a simulated AWS account. Click the video to pause. <a href="assets/kbforge-tour.mp4" download>Download as MP4</a> · <a href="demo.html">Full screen</a></p>
+      <p class="note">A 90-second tour, recorded from real kbforge output against a simulated AWS account. Click the video to pause. <a href="assets/kbforge-tour.mp4" data-tour-mp4 download>Download as MP4</a> · <a href="demo.html">Full screen</a></p>
     </div>
   </div>
 </section>
@@ -185,7 +185,7 @@ kb.destroy(confirm=<span class="k">True</span>)   <span class="c"># actually del
     <div class="tabs" data-tabs>
       <div class="tablist" role="tablist">
         <button role="tab" aria-selected="true" aria-controls="tab-wizard" id="t-wizard">Wizard</button>
-        <button role="tab" aria-selected="false" aria-controls="tab-cli" id="t-cli">Command line and YAML</button>
+        <button role="tab" aria-selected="false" aria-controls="tab-cli" id="t-cli">Command line and config files</button>
         <button role="tab" aria-selected="false" aria-controls="tab-guide" id="t-guide">In-notebook guide</button>
       </div>
       <div class="tabpanel" role="tabpanel" id="tab-wizard" aria-labelledby="t-wizard">
@@ -210,8 +210,8 @@ kbforge.wizard()</code></pre>
 kbforge plan kb.yaml      <span class="c"># checks + what would be built</span>
 kbforge apply kb.yaml     <span class="c"># asks before changing anything</span>
 kbforge ask kb.yaml <span class="s">"question"</span></code></pre>
-            <p>Keep the definition in git so teammates (or CI) build exactly the same thing. In a notebook, <code>kb.save("kb.yaml")</code> writes one for you.</p>
-            <p>All commands and the YAML format are in the <a href="reference.html#yaml">reference</a>.</p>
+            <p>Keep the definition in git so teammates (or CI) build exactly the same thing. The file can be YAML or JSON. In a notebook, <code>kb.save("kb.yaml")</code> writes one for you.</p>
+            <p>All commands and the YAML and JSON formats are in the <a href="reference.html#yaml">reference</a>.</p>
           </div>
           <figure class="shot"><a href="assets/screens/cli-plan.png"><img src="assets/screens/cli-plan.png" alt="Terminal output of kbforge plan: preflight checks with ticks and a colour-coded list of steps" loading="lazy" width="1760" height="1114"></a></figure>
         </div>
@@ -233,7 +233,7 @@ kbforge.guide()</code></pre>
 <div class="wrap">
   <nav class="next" aria-label="Next">
     <a href="https://github.com/utkarsh5026/bedrcok/blob/main/notebooks/getting_started.ipynb"><b>Starter notebook</b><span>Upload it to SageMaker and run it top to bottom.</span></a>
-    <a href="reference.html"><b>Reference</b><span>Every option, the YAML format, what gets created.</span></a>
+    <a href="reference.html"><b>Reference</b><span>Every option, the config file format, what gets created.</span></a>
     <a href="reference.html#troubleshooting"><b>Troubleshooting</b><span>Common errors and how to fix them.</span></a>
   </nav>
 </div>

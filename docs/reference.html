@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Reference · kbforge</title>
-<meta name="description" content="Every kbforge option, how to choose settings, the YAML format and CLI, permissions, troubleshooting and FAQ.">
+<meta name="description" content="Every kbforge option, how to choose settings, the YAML and JSON formats and CLI, permissions, troubleshooting and FAQ.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%231b1b1a'/><text x='16' y='21' font-family='monospace' font-weight='700' font-size='14' fill='%23f08a4b' text-anchor='middle'>kb</text></svg>">
 <link rel="stylesheet" href="assets/site.css">
 </head>
@@ -28,7 +28,7 @@
     <a href="#options">Options</a>
     <a href="#choosing">Choosing settings</a>
     <div class="label">Automation</div>
-    <a href="#yaml">YAML &amp; the CLI</a>
+    <a href="#yaml">YAML, JSON &amp; the CLI</a>
     <div class="label">Under the hood</div>
     <a href="#resources">What gets created</a>
     <a href="#permissions">Permissions</a>
@@ -44,7 +44,7 @@
     <p class="sub">The <a href="./">guide</a> gets you from zero to a working knowledge base. This page is for when you want to change a setting, automate it, or something went wrong.</p>
 
     <h2 id="options">Options</h2>
-    <p class="sub">Everything <code>KnowledgeBase(...)</code> accepts. The same keys work in YAML.</p>
+    <p class="sub">Everything <code>KnowledgeBase(...)</code> accepts. The same keys work in YAML and JSON config files.</p>
     <div class="table-wrap"><table>
       <thead><tr><th>Option</th><th>Default</th><th>What it does</th></tr></thead>
       <tbody>
@@ -74,8 +74,8 @@
     </table></div>
     <div class="callout">Embedding model, vector store and chunking can't be changed in place. To try different settings, give the knowledge base a new name (e.g. <code>hr-policies-v2</code>), compare with <code>ask()</code>, then <code>destroy()</code> the one you don't keep.</div>
 
-    <h2 id="yaml">YAML &amp; the CLI</h2>
-    <p>Keep definitions in git and build them from a terminal or CI with the same plan → apply flow. From a notebook, <code>kb.save("kb.yaml")</code> writes the file and <code>KnowledgeBase.from_yaml("kb.yaml")</code> reads it back.</p>
+    <h2 id="yaml">YAML, JSON &amp; the CLI</h2>
+    <p>Keep definitions in git and build them from a terminal or CI with the same plan → apply flow. <a href="https://github.com/utkarsh5026/bedrcok/blob/main/examples/kb.yaml"><code>examples/kb.yaml</code></a> documents every option, including the settings for each chunking strategy. From a notebook, <code>kb.save("kb.yaml")</code> (or <code>"kb.json"</code>) writes the file and <code>KnowledgeBase.from_file("kb.yaml")</code> reads it back; the extension picks the format.</p>
 <pre><code><span class="c"># kb.yaml</span>
 name: hr-policies
 region: us-east-1
@@ -89,7 +89,25 @@ chunking:
   overlap_percent: 20
 tags:
   team: people-ops</code></pre>
-<pre><code>kbforge init                      <span class="c"># write a starter kb.yaml</span>
+    <p>Each chunking strategy takes its own settings. Give only the ones for the strategy you pick; a setting from another strategy is reported as an error:</p>
+    <ul>
+      <li><code>fixed</code>: <code>max_tokens</code>, <code>overlap_percent</code></li>
+      <li><code>hierarchical</code>: <code>parent_tokens</code>, <code>child_tokens</code>, <code>overlap_tokens</code></li>
+      <li><code>semantic</code>: <code>max_tokens</code>, <code>buffer_size</code>, <code>breakpoint_threshold</code></li>
+      <li><code>none</code>: no settings</li>
+    </ul>
+<pre><code>chunking:
+  strategy: hierarchical
+  parent_tokens: 1500
+  child_tokens: 300
+  overlap_tokens: 60</code></pre>
+    <p>Prefer JSON? Use the same keys in a <code>.json</code> file (see <a href="https://github.com/utkarsh5026/bedrcok/blob/main/examples/kb.json"><code>examples/kb.json</code></a>); every command below accepts either.</p>
+<pre><code>{
+  "name": "hr-policies",
+  "source": {"s3": "s3://my-company-docs/hr/"},
+  "chunking": {"strategy": "semantic", "max_tokens": 300, "buffer_size": 0, "breakpoint_threshold": 95}
+}</code></pre>
+<pre><code>kbforge init                      <span class="c"># write a starter kb.yaml (kbforge init kb.json for JSON)</span>
 kbforge plan kb.yaml              <span class="c"># checks + what would be built</span>
 kbforge apply kb.yaml             <span class="c"># asks before changing anything (-y to skip)</span>
 kbforge ask kb.yaml "question"
@@ -143,7 +161,7 @@ kbforge models                    <span class="c"># supported embedding models</
     <h2 id="faq">FAQ</h2>
     <details><summary>Does <code>plan()</code> cost anything or change anything?</summary><p>It changes nothing. The only billable call is one tiny embedding of the word "hello", which proves the model works for you. It costs a fraction of a cent.</p></details>
     <details><summary>Can I adopt a knowledge base someone created by hand?</summary><p>If you use the same name, kbforge finds it and shows it as <span class="badge" style="--c:var(--muted)">exists</span>, or as <span class="badge" style="--c:var(--red)">blocked</span> if its settings differ. <code>destroy()</code> leaves it alone because it has no kbforge tag.</p></details>
-    <details><summary>Where's the state file?</summary><p>There isn't one. Every resource name is derived from the knowledge base name, so kbforge always looks the resources up live in AWS. Two people running the same YAML see the same plan.</p></details>
+    <details><summary>Where's the state file?</summary><p>There isn't one. Every resource name is derived from the knowledge base name, so kbforge always looks the resources up live in AWS. Two people running the same config file see the same plan.</p></details>
     <details><summary>Can my application query it without kbforge?</summary><p>Yes. It's a normal Bedrock knowledge base. Use <code>bedrock-agent-runtime</code>'s <code>retrieve</code> or <code>retrieve_and_generate</code> with the knowledge base ID from the "ready" card.</p></details>
     <details><summary>How were the screenshots and the tour made?</summary><p>By running a real JupyterLab against a simulated AWS account (the same fake the test-suite uses), so the IDs are made up and builds finish in seconds. Real builds take a few minutes, mostly for the first sync. Each screenshot is taken in JupyterLab's light and dark themes, and the guide shows the one matching your system. Regenerate the screenshots with <code>make docs-screens</code>. The tour on the guide page animates those same screenshots; <code>make docs-video</code> exports it as an MP4.</p></details>
   </main>

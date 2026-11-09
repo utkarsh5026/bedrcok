@@ -1,7 +1,7 @@
 """The ``kbforge`` command, for people who prefer a terminal (or CI) to a notebook.
 
-kbforge init                    # write a starter kb.yaml
-kbforge plan kb.yaml            # checks + what would be built
+kbforge init                    # write a starter kb.yaml (or: kbforge init kb.json)
+kbforge plan kb.yaml            # checks + what would be built (kb.json works everywhere too)
 kbforge apply kb.yaml           # build it (asks before changing anything)
 kbforge sync kb.yaml            # re-ingest after documents change
 kbforge ask kb.yaml "question"  # try a query
@@ -13,6 +13,7 @@ kbforge models                  # list supported embedding models
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -20,9 +21,11 @@ from typing import List, Optional
 from .knowledge_base import KBForgeError, KnowledgeBase
 from .models import EMBEDDING_MODELS
 from .plan import ApplyResult, make_plan
+from .spec import config_format
 
 STARTER_YAML = """\
 # Describe your knowledge base, then run:  kbforge plan kb.yaml
+# Every option, with all four chunking strategies spelled out, is in examples/kb.yaml.
 name: my-knowledge-base
 # region: us-east-1           # defaults to your AWS profile's region
 
@@ -31,14 +34,37 @@ source:
 
 embedding: titan-v2          # titan-v2 | cohere-en | cohere-multi | titan-v1
 vector_store: s3_vectors     # s3_vectors | opensearch_serverless
+
+# Pick ONE strategy and keep only its settings:
+#   fixed:        max_tokens, overlap_percent
+#   hierarchical: parent_tokens, child_tokens, overlap_tokens
+#   semantic:     max_tokens, buffer_size, breakpoint_threshold
+#   none:         (no settings)
 chunking:
-  strategy: fixed            # fixed | hierarchical | semantic | none
+  strategy: fixed
   max_tokens: 300
   overlap_percent: 20
 
 # role_arn: arn:aws:iam::123456789012:role/AmazonBedrockExecutionRoleForKnowledgeBase_x
 sync: true
 """
+
+#: The JSON starter holds the same settings. JSON has no comments, so the choices are listed in
+#: examples/kb.json and examples/README.md instead.
+STARTER_JSON = (
+    json.dumps(
+        {
+            "name": "my-knowledge-base",
+            "source": {"s3": "s3://your-bucket/your-folder/"},
+            "embedding": "titan-v2",
+            "vector_store": "s3_vectors",
+            "chunking": {"strategy": "fixed", "max_tokens": 300, "overlap_percent": 20},
+            "sync": True,
+        },
+        indent=2,
+    )
+    + "\n"
+)
 
 
 def _confirm(question: str) -> bool:
@@ -50,16 +76,17 @@ def _confirm(question: str) -> bool:
 
 
 def _load(args: argparse.Namespace) -> KnowledgeBase:
-    return KnowledgeBase.from_yaml(args.config, region=args.region)
+    """Read the config file named on the command line (YAML or JSON, by extension)."""
+    return KnowledgeBase.from_file(args.config, region=args.region)
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    """``kbforge init``: write a starter kb.yaml (never overwrites)."""
+    """``kbforge init``: write a starter kb.yaml, or kb.json if that's the name given (never overwrites)."""
     path = Path(args.path)
     if path.exists():
         print(f"{path} already exists — not overwriting it.")
         return 1
-    path.write_text(STARTER_YAML)
+    path.write_text(STARTER_JSON if config_format(path) == "json" else STARTER_YAML)
     print(f"Wrote {path}. Edit the source and name, then run: kbforge plan {path}")
     return 0
 
@@ -135,14 +162,14 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     def with_config(name: str, help_text: str) -> argparse.ArgumentParser:
-        """Add a subcommand that takes a YAML config path and an optional --region."""
+        """Add a subcommand that takes a YAML/JSON config path and an optional --region."""
         p = sub.add_parser(name, help=help_text)
-        p.add_argument("config", help="path to the knowledge base YAML file")
+        p.add_argument("config", help="path to the knowledge base config (.yaml, .yml or .json)")
         p.add_argument("--region", help="override the region in the config")
         return p
 
-    p = sub.add_parser("init", help="write a starter kb.yaml")
-    p.add_argument("path", nargs="?", default="kb.yaml")
+    p = sub.add_parser("init", help="write a starter kb.yaml (name it kb.json for JSON)")
+    p.add_argument("path", nargs="?", default="kb.yaml", help="where to write it; the extension picks the format")
     p.set_defaults(func=cmd_init)
 
     with_config("plan", "show checks and what would be built").set_defaults(func=cmd_plan)
