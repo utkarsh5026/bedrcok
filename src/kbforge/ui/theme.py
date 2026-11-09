@@ -2,7 +2,9 @@
 
 The styles are scoped under a ``.kbf`` class so they never leak into the rest of the
 notebook. Colours come from JupyterLab's own CSS variables where possible, so the cards
-follow the light/dark theme of SageMaker Studio, JupyterLab and VS Code automatically.
+follow the light/dark theme of SageMaker Studio, JupyterLab and Notebook 7 automatically.
+VS Code doesn't define the JupyterLab variables, so in its dark themes the cards fall back
+to VS Code's own colours (``--vscode-*``) and then to a fixed dark palette.
 """
 
 from __future__ import annotations
@@ -18,14 +20,18 @@ CSS = """
   --kbf-soft: var(--jp-layout-color2, #f6f8fa);
   --kbf-border: var(--jp-border-color2, #d1d9e0);
   --kbf-green: #1a7f37; --kbf-amber: #9a6700; --kbf-red: #cf222e;
-  --kbf-blue: #0969da; --kbf-grey: #59636e;
+  --kbf-blue: #0969da; --kbf-grey: #59636e; --kbf-purple: #8250df;
   font-family: var(--jp-ui-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif);
   font-size: 13px; line-height: 1.5; color: var(--kbf-fg);
   max-width: 980px; margin: 4px 0 8px;
 }
 body[data-jp-theme-light="false"] .kbf, body.vscode-dark .kbf, body.vscode-high-contrast .kbf {
-  --kbf-green: #3fb950; --kbf-amber: #d29922; --kbf-red: #f85149; --kbf-blue: #4493f8; --kbf-grey: #9198a1;
-  --kbf-border: var(--jp-border-color2, #3d444d); --kbf-soft: var(--jp-layout-color2, #151b23);
+  --kbf-green: #3fb950; --kbf-amber: #d29922; --kbf-red: #f85149; --kbf-blue: #4493f8; --kbf-grey: #9198a1; --kbf-purple: #a371f7;
+  --kbf-fg: var(--jp-ui-font-color1, var(--vscode-editor-foreground, #e6edf3));
+  --kbf-muted: var(--jp-ui-font-color2, var(--vscode-descriptionForeground, #9198a1));
+  --kbf-card: var(--jp-layout-color1, var(--vscode-editor-background, #0d1117));
+  --kbf-soft: var(--jp-layout-color2, var(--vscode-editorWidget-background, #151b23));
+  --kbf-border: var(--jp-border-color2, var(--vscode-widget-border, #3d444d));
 }
 .kbf * { box-sizing: border-box; }
 .kbf .card { background: var(--kbf-card); border: 1px solid var(--kbf-border); border-radius: 10px; overflow: hidden; }
@@ -77,9 +83,11 @@ body[data-jp-theme-light="false"] .kbf, body.vscode-dark .kbf, body.vscode-high-
 .kbf .warn { margin-top: 6px; padding: 8px 10px; border-radius: 6px; border-left: 3px solid var(--c); background: color-mix(in srgb, var(--c) 8%, transparent); white-space: pre-wrap; }
 .kbf details { margin-top: 6px; }
 .kbf summary { cursor: pointer; color: var(--kbf-blue); font-size: 12px; }
-.kbf pre { margin: 6px 0 0; padding: 10px 12px; background: var(--kbf-soft); border: 1px solid var(--kbf-border); border-radius: 6px;
-  overflow-x: auto; font-size: 12px; line-height: 1.45; white-space: pre; }
+.kbf .card pre { margin: 6px 0 0; padding: 10px 12px; background: var(--kbf-soft); color: var(--kbf-fg);
+  border: 1px solid var(--kbf-border); border-radius: 6px; overflow-x: auto; font-size: 12px; line-height: 1.45; white-space: pre; }
+.kbf .card pre code { background: none; color: inherit; padding: 0; border: 0; font-size: inherit; }
 .kbf .next { background: var(--kbf-soft); }
+.kbf .next pre { background: var(--kbf-card); }
 .kbf .grid2 { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; }
 .kbf .grid2 .k { color: var(--kbf-muted); }
 .kbf .spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--kbf-border); border-top-color: var(--kbf-blue);

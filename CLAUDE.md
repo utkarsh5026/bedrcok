@@ -9,8 +9,8 @@ uv sync --all-extras                 # install package + dev deps (Python 3.10+,
 uv run pytest                        # all tests, against tests/fake_aws.py; no AWS needed
 uv run ruff check src tests scripts makefile.py  # lint (ruff format to format)
 uv run mypy                          # type-check src/
-uv run --group docs python scripts/docs_screenshots.py --chromium <path>   # regenerate docs/assets/screens
-uv run --group docs python scripts/docs_video.py --chromium <path>         # re-export docs/assets/kbforge-tour.mp4 (needs ffmpeg)
+uv run --group docs python scripts/docs_screenshots.py   # regenerate docs/assets/screens (installs Playwright's Chromium on first run)
+uv run --group docs python scripts/docs_video.py         # re-export docs/assets/kbforge-tour.mp4 from the screenshots (needs ffmpeg)
 ```
 
 The same tasks are wrapped by `make` (see `make help`): `make check` runs lint, format, types and tests and prints one summary table. The `Makefile` is a thin shim; the logic and `rich` output live in `makefile.py`, so add new tasks there with the `@task` decorator.
@@ -24,10 +24,10 @@ The same tasks are wrapped by `make` (see `make help`): `make check` runs lint, 
 - `src/kbforge/steps/`: one `Step` per AWS resource. `base.py` defines `Step`/`Action`/`Inspection`/`Ctx`; `iam.py`, `s3_vectors.py`, `opensearch.py` and `bedrock.py` implement them; `build_steps()` sets the order.
 - `src/kbforge/plan.py`: `make_plan()` (checks + `inspect()` every step, read-only) and `Plan.apply()` (re-inspects each step just before acting, so re-runs resume).
 - `src/kbforge/knowledge_base.py`: `KnowledgeBase`, the user-facing facade (`plan/apply/sync/ask/status/destroy`), plus `Answers` and `Status`.
-- `src/kbforge/ui/`: `theme.py` (scoped CSS using JupyterLab variables, so it follows light/dark), `html.py` (cards via `_repr_html_`), `text.py` (CLI output), `progress.py` (live-updating display; `progress_target` redirects it for the wizard).
+- `src/kbforge/ui/`: `theme.py` (scoped CSS using JupyterLab variables, so it follows light/dark), `html.py` (cards via `_repr_html_`), `text.py` (CLI output), `progress.py` (live-updating display; `progress_target` redirects it for the wizard), `wizard_style.py` (the wizard's stylesheet, scoped to `.kbf-wiz`, plus its HTML pieces: stepper, option cards, live preview) and `choices.py` (`OptionCards`, the clickable-card replacement for dropdowns).
 - `src/kbforge/wizard.py` (ipywidgets form), `guide.py` (getting-started card), `cli.py` (`kbforge` command).
 - `tests/fake_aws.py`: in-memory fake of every service used. Add any new boto3 call here as well.
-- `docs/`: GitHub Pages site, plain static files deployed by `.github/workflows/pages.yml` on pushes to `main`. `index.html` is the short guide, `reference.html` holds options, permissions and troubleshooting, and `demo.html` is the tour full screen. Shared styles and scripts live in `docs/assets/` (`site.css`/`site.js`; `demo.css`/`demo.js` draw the animated tour from the screenshots). Screenshots are generated, not hand-made. After regenerating them, re-export the MP4 with `scripts/docs_video.py`. Keep the design plain: one accent colour, no gradients or emoji.
+- `docs/`: GitHub Pages site, plain static files deployed by `.github/workflows/pages.yml` on pushes to `main`. `index.html` is the short guide, `reference.html` holds options, permissions and troubleshooting, and `demo.html` is the tour full screen. Shared styles and scripts live in `docs/assets/` (`site.css`/`site.js`; `demo.css`/`demo.js` draw the animated tour from the screenshots). Screenshots are generated, not hand-made: each comes in light and `-dark` (JupyterLab Dark) versions, picked by `<picture>` + `prefers-color-scheme` in the site and README. After regenerating them, re-export the MP4 with `scripts/docs_video.py`. Keep the design plain: one accent colour, no gradients or emoji.
 - `.github/`: `ci.yml` (ruff, mypy, pytest on 3.10–3.14 plus an oldest-deps run, wheel smoke test), `release.yml` (on a `v*` tag: CI, tag-vs-version check, GitHub Release; PyPI is opt-in via the `PUBLISH_TO_PYPI` variable), `pages.yml`, and `dependabot.yml`. Actions are pinned to commit SHAs with a `# vX.Y.Z` comment; keep that when editing.
 
 ## How a step works

@@ -317,9 +317,9 @@ def cli(args: List[str]) -> int:
     return run("kbforge CLI", "💻", uv("kbforge", *(args or ["--help"]))).code
 
 
-@task("docs-screens", "📸", "Docs", "Regenerate docs/assets/screens (set CHROMIUM=/path if needed)")
+@task("docs-screens", "📸", "Docs", "Regenerate light and dark docs screenshots (CHROMIUM=/path for your own browser)")
 def docs_screens(args: List[str]) -> int:
-    """Rebuild the GitHub Pages screenshots by running the docs notebook against the fake AWS."""
+    """Rebuild the GitHub Pages screenshots (light and dark) by running the docs notebook against the fake AWS."""
     cmd = ["uv", "run", "--group", "docs", "python", "scripts/docs_screenshots.py"]
     if os.environ.get("CHROMIUM"):
         cmd += ["--chromium", os.environ["CHROMIUM"]]

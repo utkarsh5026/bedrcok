@@ -44,7 +44,7 @@
     {
       kind: "cell", dur: 9.5, chapter: "1 · Describe", label: "Step 1 of 4 · Describe",
       code: 'from kbforge import KnowledgeBase\n\nkb = KnowledgeBase("hr-policies", source="s3://my-company-docs/hr/")\nkb',
-      outputs: [{ img: "describe.png", w: 2524, h: 906, crop: CARD_CROP(182) }],
+      outputs: [{ img: "describe.png", w: 2524, h: 950, crop: CARD_CROP(180) }],
       captions: [
         [0, "<b>Describe it.</b> Just a name and where your documents live."],
         [5.2, "kbforge shows the pipeline it will set up. <b>Nothing in AWS has changed.</b>"],
@@ -53,7 +53,7 @@
     {
       kind: "cell", dur: 15, chapter: "2 · Plan", label: "Step 2 of 4 · Plan",
       code: "kb.plan()",
-      outputs: [{ img: "plan.png", w: 2524, h: 2470, crop: CARD_CROP(72) }],
+      outputs: [{ img: "plan.png", w: 2524, h: 2516, crop: CARD_CROP(72) }],
       captions: [
         [0, "<b>Read the plan.</b> It's read-only, so run it as often as you like."],
         [4, "Preflight checks: your credentials, model access, and what's in the bucket."],
@@ -63,7 +63,7 @@
     {
       kind: "cell", dur: 9, chapter: "Mistakes", label: "Caught early",
       code: 'typo = KnowledgeBase("finance-docs", source="s3://finanse-reports/2026/")\ntypo.plan()',
-      outputs: [{ img: "blocked.png", w: 2524, h: 2522, crop: CARD_CROP(108), panMax: 110 }],
+      outputs: [{ img: "blocked.png", w: 2524, h: 2566, crop: CARD_CROP(108), panMax: 110 }],
       captions: [
         [0, "What if something's wrong? Here the bucket name has a typo&hellip;"],
         [4, "&hellip;so the plan is <b>blocked</b> and says why. Nothing gets half-built."],
@@ -74,7 +74,7 @@
       code: "kb.apply()",
       outputs: [
         { img: "progress.png", w: 2360, h: 1000 },
-        { img: "apply.png", w: 2524, h: 1922, at: 6.5, crop: CARD_CROP(72) },
+        { img: "apply.png", w: 2524, h: 1972, at: 6.5, crop: CARD_CROP(72) },
       ],
       captions: [
         [0, "<b>Build it.</b> The card updates live, one step at a time."],
@@ -93,7 +93,7 @@
     {
       kind: "cell", dur: 9, chapter: "Later", label: "Afterwards",
       code: "kb.sync()      # documents changed? re-ingest them\nkb.destroy()   # preview what would be deleted",
-      outputs: [{ img: "destroy.png", w: 2524, h: 1658, crop: CARD_CROP(72) }],
+      outputs: [{ img: "destroy.png", w: 2524, h: 1704, crop: CARD_CROP(72) }],
       captions: [
         [0, "<b>Later:</b> sync when documents change, and clean up when you're done."],
         [5, "destroy() only removes what kbforge created. <b>Your documents are never touched.</b>"],

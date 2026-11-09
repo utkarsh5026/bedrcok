@@ -109,7 +109,7 @@ kb</code></pre>
         <p>Give it a <b>name</b> and a <b>source</b>. Everything else (the AI model, the storage, how files are split) has a sensible default you can <a href="reference.html#options">change later</a>.</p>
         <p>This doesn't touch AWS. It just shows the pipeline it's going to set up.</p>
       </div>
-      <figure class="shot"><a href="assets/screens/describe.png"><img src="assets/screens/describe.png" alt="A card showing the data flow: source, chunking, embeddings, vector store, knowledge base" loading="lazy" width="2524" height="906"></a></figure>
+      <figure class="shot"><a href="assets/screens/describe.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/describe-dark.png"><img src="assets/screens/describe.png" alt="A card showing the data flow: source, chunking, embeddings, vector store, knowledge base" loading="lazy" width="2524" height="950"></picture></a></figure>
     </div>
 
     <div class="row" id="plan">
@@ -125,7 +125,7 @@ kb</code></pre>
           <div><span class="badge" style="--c:var(--red)">blocked</span> fix this first</div>
         </div>
       </div>
-      <figure class="shot tall"><a href="assets/screens/plan.png"><img src="assets/screens/plan.png" alt="Full plan card: summary, data flow, four preflight checks and six numbered steps with CREATE and RUN badges" loading="lazy" width="2524" height="2470"></a></figure>
+      <figure class="shot tall"><a href="assets/screens/plan.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/plan-dark.png"><img src="assets/screens/plan.png" alt="Full plan card: summary, data flow, four preflight checks and six numbered steps with CREATE and RUN badges" loading="lazy" width="2524" height="2516"></picture></a></figure>
     </div>
 
     <div class="row" id="blocked">
@@ -135,7 +135,7 @@ kb</code></pre>
         <p>A typo in the bucket name, a model you don't have access to, the wrong region: the plan turns <b>red</b>, says what to do, and <code>apply()</code> refuses to start. Nothing is ever half-built.</p>
         <p>Fix it, run <code>kb.plan()</code> again, carry on. Common fixes are on the <a href="reference.html#troubleshooting">help page</a>.</p>
       </div>
-      <figure class="shot tall"><a href="assets/screens/blocked.png"><img src="assets/screens/blocked.png" alt="A plan with a red Blocked banner: the source bucket finanse-reports doesn't exist" loading="lazy" width="2524" height="2522"></a></figure>
+      <figure class="shot tall"><a href="assets/screens/blocked.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/blocked-dark.png"><img src="assets/screens/blocked.png" alt="A plan with a red Blocked banner: the source bucket finanse-reports doesn't exist" loading="lazy" width="2524" height="2566"></picture></a></figure>
     </div>
 
     <div class="row" id="build">
@@ -148,8 +148,8 @@ kb</code></pre>
         <div class="callout warn"><b>Stopped halfway?</b> The card explains the error in plain English. Fix it and run <code>kb.apply()</code> again: finished steps are skipped.</div>
       </div>
       <div>
-        <figure class="shot"><a href="assets/screens/progress.png"><img src="assets/screens/progress.png" alt="Progress card mid-run: five steps done with timings, the ingestion step spinning with a live status line" loading="lazy" width="2360" height="1000"></a><figcaption>While it works.</figcaption></figure>
-        <figure class="shot tall"><a href="assets/screens/apply.png"><img src="assets/screens/apply.png" alt="Finished build: all six steps ticked, then a Ready card with the knowledge base ID, data source ID and example code" loading="lazy" width="2524" height="1922"></a><figcaption>When it's done.</figcaption></figure>
+        <figure class="shot"><a href="assets/screens/progress.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/progress-dark.png"><img src="assets/screens/progress.png" alt="Progress card mid-run: five steps done with timings, the ingestion step spinning with a live status line" loading="lazy" width="2360" height="1000"></picture></a><figcaption>While it works.</figcaption></figure>
+        <figure class="shot tall"><a href="assets/screens/apply.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/apply-dark.png"><img src="assets/screens/apply.png" alt="Finished build: all six steps ticked, then a Ready card with the knowledge base ID, data source ID and example code" loading="lazy" width="2524" height="1972"></picture></a><figcaption>When it's done.</figcaption></figure>
       </div>
     </div>
 
@@ -160,7 +160,7 @@ kb</code></pre>
 <pre><code>kb.ask(<span class="s">"How many weeks of parental leave?"</span>)</code></pre>
         <p>You'll see the passages that match best, with a score and the file each came from. If the right passages come back, your knowledge base is ready to plug into a chatbot or app.</p>
       </div>
-      <figure class="shot"><a href="assets/screens/ask.png"><img src="assets/screens/ask.png" alt="Three retrieved chunks with relevance bars, scores and the S3 path of each source document" loading="lazy" width="2524" height="870"></a></figure>
+      <figure class="shot"><a href="assets/screens/ask.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/ask-dark.png"><img src="assets/screens/ask.png" alt="Three retrieved chunks with relevance bars, scores and the S3 path of each source document" loading="lazy" width="2524" height="870"></picture></a></figure>
     </div>
 
     <div class="row" id="later">
@@ -173,7 +173,7 @@ kb.destroy()               <span class="c"># preview the delete</span>
 kb.destroy(confirm=<span class="k">True</span>)   <span class="c"># actually delete</span></code></pre>
         <p><code>destroy()</code> only removes what kbforge created. <b>Your documents are never touched.</b></p>
       </div>
-      <figure class="shot"><a href="assets/screens/status.png"><img src="assets/screens/status.png" alt="Status card: knowledge base ID, region, embedding model, vector store, data source and last sync" loading="lazy" width="2524" height="704"></a></figure>
+      <figure class="shot"><a href="assets/screens/status.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/status-dark.png"><img src="assets/screens/status.png" alt="Status card: knowledge base ID, region, embedding model, vector store, data source and last sync" loading="lazy" width="2524" height="704"></picture></a></figure>
     </div>
   </div>
 </section>
@@ -193,12 +193,13 @@ kb.destroy(confirm=<span class="k">True</span>)   <span class="c"># actually del
           <div class="text">
 <pre><code><span class="k">import</span> kbforge
 kbforge.wizard()</code></pre>
-            <p>A form: fill in a name and an S3 location (the recommended defaults are already picked), click <b>Review plan</b>, then <b>Build it</b>. The build button only unlocks when nothing is blocked.</p>
+            <p>A form for the same three stages. Each answer is checked as you type, and the choices with trade-offs (embedding model, vector store, chunking) are cards that say when to pick each one. A side panel shows the data flow and the exact AWS names kbforge will use.</p>
+            <p>Click <b>Review plan</b>, then <b>Build it</b>. The build button only unlocks when nothing is blocked.</p>
             <p><b>Show as code</b> gives you the equivalent Python and YAML, so you can graduate to a saved config later.</p>
           </div>
           <div>
-            <figure class="shot"><a href="assets/screens/wizard-form.png"><img src="assets/screens/wizard-form.png" alt="The wizard form with name, S3 location, embedding model, dimensions, vector store and chunking fields" loading="lazy" width="2524" height="1050"></a></figure>
-            <figure class="shot tall"><a href="assets/screens/wizard-built.png"><img src="assets/screens/wizard-built.png" alt="The wizard after building: progress card, ready card and an Ask box" loading="lazy" width="2524" height="3032"></a><figcaption>After building, an Ask box lets you try a question straight away.</figcaption></figure>
+            <figure class="shot tall"><a href="assets/screens/wizard-form.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/wizard-form-dark.png"><img src="assets/screens/wizard-form.png" alt="The wizard: a stepper header, numbered sections with option cards for documents, embedding model, vector store and chunking, and a live preview panel on the right" loading="lazy" width="2524" height="3474"></picture></a></figure>
+            <figure class="shot tall"><a href="assets/screens/wizard-built.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/wizard-built-dark.png"><img src="assets/screens/wizard-built.png" alt="The wizard after building: every stage ticked, the progress card, the ready card and a Try it box for asking questions" loading="lazy" width="2524" height="2952"></picture></a><figcaption>After building, a "Try it" box lets you ask a question straight away.</figcaption></figure>
           </div>
         </div>
       </div>
@@ -222,7 +223,7 @@ kbforge ask kb.yaml <span class="s">"question"</span></code></pre>
 kbforge.guide()</code></pre>
             <p>Forgot a step? This card shows the whole journey, with code to copy, right inside your notebook.</p>
           </div>
-          <figure class="shot"><a href="assets/screens/guide.png"><img src="assets/screens/guide.png" alt="The kbforge getting-started card listing four steps with code" loading="lazy" width="2524" height="1570"></a></figure>
+          <figure class="shot"><a href="assets/screens/guide.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/guide-dark.png"><img src="assets/screens/guide.png" alt="The kbforge getting-started card listing four steps with code" loading="lazy" width="2524" height="1846"></picture></a></figure>
         </div>
       </div>
     </div>

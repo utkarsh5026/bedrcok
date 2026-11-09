@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.21"]
+requires = ["hatchling>=1.33.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -76,6 +76,7 @@ ignore = ["UP006", "UP007", "UP035", "UP045"]  # keep typing.Optional/List: easi
 
 [tool.ruff.lint.per-file-ignores]
 "src/kbforge/ui/theme.py" = ["E501"]  # the stylesheet reads better one rule per line
+"src/kbforge/ui/wizard_style.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.10"

@@ -13,6 +13,9 @@ How it works:
 3. Pipes the frames into ``ffmpeg``, which must be on your PATH, to make an H.264 MP4 that
    plays everywhere.
 
+Like the screenshot script, it runs ``playwright install chromium`` first unless you pass
+``--chromium`` (a no-op once the right build is cached).
+
 Run ``scripts/docs_screenshots.py`` first if the screenshots changed, then:
 
     uv run --group docs python scripts/docs_video.py
@@ -28,6 +31,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from docs_screenshots import ensure_browser
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -104,6 +108,8 @@ def main() -> None:
     parser.add_argument("--scale", type=float, default=1.5, help="1.5 gives 1920×1080 (default), 1 gives 1280×720")
     parser.add_argument("--out", type=Path, default=OUT, help=f"output file (default {OUT.relative_to(ROOT)})")
     args = parser.parse_args()
+    if not args.chromium:
+        ensure_browser()
     record(args.fps, args.scale, args.chromium, args.out.resolve())
 
 

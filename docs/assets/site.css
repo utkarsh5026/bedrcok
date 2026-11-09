@@ -105,10 +105,10 @@ ol.cells span { display: block; color: var(--muted); font-size: 15px; }
 .row p { color: var(--muted); font-size: 16px; }
 .row p b { color: var(--fg); font-weight: 600; }
 .shot { margin: 0; }
-.shot a { display: block; border: 1px solid var(--border); overflow: hidden; background: #fff; }
+.shot a { display: block; border: 1px solid var(--border); overflow: hidden; background: var(--bg); }
 .shot img { display: block; width: 100%; height: auto; }
 .shot.tall a { max-height: 620px; position: relative; }
-.shot.tall a::after { content: "Open full size"; position: absolute; inset: auto 0 0; padding: 48px 0 12px; text-align: center; font: 13px var(--sans); color: #333; background: linear-gradient(transparent, #fff 75%); }
+.shot.tall a::after { content: "Open full size"; position: absolute; inset: auto 0 0; padding: 48px 0 12px; text-align: center; font: 13px var(--sans); color: var(--fg); background: linear-gradient(transparent, var(--bg) 75%); }
 figcaption { font-size: 14px; color: var(--muted); margin-top: 8px; }
 .shot + .shot { margin-top: 20px; }
 

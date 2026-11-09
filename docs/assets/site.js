@@ -45,6 +45,17 @@
     });
   });
 
+  // Screenshots come in light and dark; make the full-size link open the one being shown.
+  const syncScreenshotLinks = () => {
+    document.querySelectorAll("figure a:has(picture)").forEach((a) => {
+      const img = a.querySelector("img");
+      a.href = img.currentSrc || img.src;
+    });
+  };
+  document.querySelectorAll("figure picture img").forEach((img) => img.addEventListener("load", syncScreenshotLinks));
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => setTimeout(syncScreenshotLinks, 50));
+  syncScreenshotLinks();
+
   // Reference page: inline the IAM policy so the JSON file stays the single source of truth.
   const policy = document.getElementById("policy");
   if (policy) {
