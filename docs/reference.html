@@ -154,9 +154,16 @@ kbforge parsers                   <span class="c"># models your account can use 
     <div class="callout"><b>IAM locked down?</b> Have an admin create a role that trusts <code>bedrock.amazonaws.com</code>, then pass <code>role_arn=</code>. The plan shows the exact permissions that role needs in the "IAM service role" fold-out, and you can drop the IAM statements above.</div>
 
     <h2 id="troubleshooting">Troubleshooting</h2>
+    <p class="sub">When something goes wrong kbforge prints one message that says what to do next, not a Python stack trace, and a mistyped name gets a suggestion:</p>
+    <figure class="shot"><a href="assets/screens/error.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/error-dark.png"><img src="assets/screens/error.png" alt="A one-line kbforge error: no knowledge base named hr-policy, did you mean hr-policies?" loading="lazy" width="2524" height="168"></picture></a></figure>
     <div class="table-wrap"><table>
       <thead><tr><th>You see</th><th>What it means</th><th>Fix</th></tr></thead>
       <tbody>
+        <tr><td>"Your AWS session has expired"</td><td>The notebook's temporary credentials ran out.</td><td>In SageMaker, restart the kernel; elsewhere log in again (e.g. <code>aws sso login</code>). Then run the same call again.</td></tr>
+        <tr><td>"AWS didn't accept your credentials"</td><td>No credentials, or they belong to another account.</td><td>Run <code>aws sts get-caller-identity</code> to see who you are signed in as.</td></tr>
+        <tr><td>"No AWS region configured"</td><td>Neither your profile nor the call names a region.</td><td>Pass <code>region="us-east-1"</code> (or set <code>AWS_DEFAULT_REGION</code>).</td></tr>
+        <tr><td>"There's no knowledge base named …"</td><td><code>KnowledgeBase.open()</code> couldn't find that name in this region.</td><td>Run <code>kbforge.knowledge_bases()</code> to see the names, or pass <code>region=</code>.</td></tr>
+        <tr><td>Answer ✕ "don't have access to the model"</td><td><code>ask(answer=True)</code> calls the answer model with your own role.</td><td>Enable the model under Model access, or pick another with <code>model=</code>.</td></tr>
         <tr><td>Embedding model ✕ "can't invoke this model"</td><td>Model access isn't enabled for the account, or your role lacks <code>bedrock:InvokeModel</code>.</td><td>Bedrock console → Model access, or ask your admin. Try another region or model.</td></tr>
         <tr><td>Parsing model ✕ "can't invoke" or "isn't available"</td><td>The model isn't enabled for the account, isn't offered in this region, or your role lacks <code>bedrock:InvokeModel</code>.</td><td>Run <code>kbforge.parsing_models()</code> and pick one from the list, or enable access in the Bedrock console.</td></tr>
         <tr><td>Data source ⚠ "parses with … but the spec says …"</td><td>The data source was built with a different parser. kbforge doesn't change it in place.</td><td>Use a new name, or <code>destroy()</code> and apply again.</td></tr>

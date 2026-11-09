@@ -111,6 +111,9 @@ body[data-jp-theme-light="false"] .kbf, body.vscode-dark .kbf, body.vscode-high-
 .kbf .tbl td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--kbf-border); vertical-align: top; }
 .kbf .tbl tr:last-child td { border-bottom: 0; }
 .kbf .tbl td.nw { white-space: nowrap; }
+/* JupyterLab right-aligns and stripes notebook tables; these selectors outrank its rules. */
+.kbf .tbl table th, .kbf .tbl table td { text-align: left; }
+.kbf .tbl tbody tr:nth-child(n) { background: transparent; }
 @media (max-width: 640px) { .kbf .arrow { display: none; } .kbf .stage { flex-basis: 100%; margin-bottom: 6px; } }
 </style>
 """

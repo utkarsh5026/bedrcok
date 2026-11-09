@@ -41,7 +41,7 @@
     {
       kind: "title", dur: 4.5, chapter: "Intro",
       html: '<div class="mark">kbforge</div><h1>From documents in S3 to a<br>Bedrock knowledge base.</h1>' +
-        "<p>Four notebook cells. About 90 seconds to watch.</p>",
+        "<p>Four notebook cells. Under two minutes to watch.</p>",
     },
     {
       kind: "cell", dur: 6, chapter: "Install", label: "Install",
@@ -61,7 +61,7 @@
     {
       kind: "cell", dur: 15, chapter: "2 · Plan", label: "Step 2 of 4 · Plan",
       code: "kb.plan()",
-      outputs: [{ img: "plan.png", w: 2524, h: 2516, crop: CARD_CROP(72) }],
+      outputs: [{ img: "plan.png", w: 2524, h: 2554, crop: CARD_CROP(72) }],
       captions: [
         [0, "<b>Read the plan.</b> It's read-only, so run it as often as you like."],
         [4, "Preflight checks: your credentials, model access, and what's in the bucket."],
@@ -71,7 +71,7 @@
     {
       kind: "cell", dur: 9, chapter: "Mistakes", label: "Caught early",
       code: 'typo = KnowledgeBase("finance-docs", source="s3://finanse-reports/2026/")\ntypo.plan()',
-      outputs: [{ img: "blocked.png", w: 2524, h: 2566, crop: CARD_CROP(108), panMax: 110 }],
+      outputs: [{ img: "blocked.png", w: 2524, h: 2606, crop: CARD_CROP(108), panMax: 110 }],
       captions: [
         [0, "What if something's wrong? Here the bucket name has a typo&hellip;"],
         [4, "&hellip;so the plan is <b>blocked</b> and says why. Nothing gets half-built."],
@@ -99,9 +99,27 @@
       ],
     },
     {
+      kind: "cell", dur: 9.5, chapter: "Answers", label: "Step 4 of 4 · Ask",
+      code: 'kb.ask("How many weeks of parental leave do we get?", answer=True)',
+      outputs: [{ img: "answer.png", w: 2524, h: 932, crop: CARD_CROP(72) }],
+      captions: [
+        [0, "Want a <b>written answer</b>? Add <code>answer=True</code>&hellip;"],
+        [4.6, "&hellip;and a model answers from your documents, citing each passage it used."],
+      ],
+    },
+    {
+      kind: "cell", dur: 8, chapter: "Find it", label: "Afterwards",
+      code: 'kbforge.knowledge_bases()   # everything kbforge built here',
+      outputs: [{ img: "list.png", w: 2524, h: 996, crop: CARD_CROP(72) }],
+      captions: [
+        [0, "New notebook? <b>List</b> what's already built&hellip;"],
+        [4, "&hellip;and pick one up with <code>KnowledgeBase.open(name)</code>."],
+      ],
+    },
+    {
       kind: "cell", dur: 9, chapter: "Later", label: "Afterwards",
       code: "kb.sync()      # documents changed? re-ingest them\nkb.destroy()   # preview what would be deleted",
-      outputs: [{ img: "destroy.png", w: 2524, h: 1704, crop: CARD_CROP(72) }],
+      outputs: [{ img: "destroy.png", w: 2524, h: 1742, crop: CARD_CROP(72) }],
       captions: [
         [0, "<b>Later:</b> sync when documents change, and clean up when you're done."],
         [5, "destroy() only removes what kbforge created. <b>Your documents are never touched.</b>"],

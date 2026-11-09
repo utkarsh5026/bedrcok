@@ -96,6 +96,14 @@ Resource names are derived from the KB name, so a second run finds what already 
 <td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/ask-dark.png"><img src="docs/assets/screens/ask.png" alt="kb.ask() card showing retrieved chunks"></picture></td>
 <td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/wizard-form-dark.png"><img src="docs/assets/screens/wizard-form.png" alt="The kbforge wizard form in JupyterLab"></picture></td>
 </tr>
+<tr>
+<td align="center"><b>Want an answer?</b> <code>kb.ask(…, answer=True)</code></td>
+<td align="center"><b>Built one before?</b> <code>kbforge.knowledge_bases()</code></td>
+</tr>
+<tr>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/answer-dark.png"><img src="docs/assets/screens/answer.png" alt="kb.ask(answer=True) card: a written answer with numbered citations and its sources"></picture></td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/list-dark.png"><img src="docs/assets/screens/list.png" alt="kbforge.knowledge_bases() table of the knowledge bases kbforge built, ready to open"></picture></td>
+</tr>
 </table>
 
 <details>
@@ -121,7 +129,7 @@ kbforge apply examples/kb.yaml
 2. **Check permissions.** Your notebook role needs the permissions in [`docs/notebook-role-policy.json`](docs/notebook-role-policy.json).
    > [!TIP]
    > If IAM is locked down in your account, pass an existing Bedrock role as `role_arn=` and kbforge won't try to create one.
-3. **Read the guide.** The [guide](https://utkarsh5026.github.io/bedrcok/) has a 90-second video tour; the [reference](https://utkarsh5026.github.io/bedrcok/reference.html) covers every option, how to choose settings, and troubleshooting.
+3. **Read the guide.** The [guide](https://utkarsh5026.github.io/bedrcok/) has a short video tour; the [reference](https://utkarsh5026.github.io/bedrcok/reference.html) covers every option, how to choose settings, and troubleshooting.
 
 Once it's built, the rest of the lifecycle is one call each:
 
