@@ -24,7 +24,8 @@ uv run --group docs python scripts/docs_screenshots.py --chromium <path>   # reg
 - `src/kbforge/ui/`: `theme.py` (scoped CSS using JupyterLab variables, so it follows light/dark), `html.py` (cards via `_repr_html_`), `text.py` (CLI output), `progress.py` (live-updating display; `progress_target` redirects it for the wizard).
 - `src/kbforge/wizard.py` (ipywidgets form), `guide.py` (getting-started card), `cli.py` (`kbforge` command).
 - `tests/fake_aws.py`: in-memory fake of every service used. Add any new boto3 call here as well.
-- `docs/`: GitHub Pages site (static `index.html`, served from `/docs` on `main`). Screenshots are generated, not hand-made.
+- `docs/`: GitHub Pages site (static `index.html`, deployed by `.github/workflows/pages.yml` on pushes to `main`). Screenshots are generated, not hand-made.
+- `.github/`: `ci.yml` (ruff, mypy, pytest on 3.10–3.14 plus an oldest-deps run, wheel smoke test), `release.yml` (on a `v*` tag: CI, tag-vs-version check, GitHub Release; PyPI is opt-in via the `PUBLISH_TO_PYPI` variable), `pages.yml`, and `dependabot.yml`. Actions are pinned to commit SHAs with a `# vX.Y.Z` comment; keep that when editing.
 
 ## How a step works
 

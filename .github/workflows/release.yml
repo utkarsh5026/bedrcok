@@ -1,0 +1,120 @@
+# Release: push a tag like v0.2.0 and this workflow ships it.
+#
+#   1. Runs the full CI suite (the same ci.yml that guards pull requests).
+#   2. Checks the tag matches the version in pyproject.toml, so a release can
+#      never be labelled with the wrong number.
+#   3. Builds the sdist and wheel once, and signs a build-provenance
+#      attestation for them (verify with: gh attestation verify <file> -R <repo>).
+#   4. Creates a GitHub Release with auto-generated notes and the files attached.
+#   5. Optionally publishes to PyPI (see the publish-pypi job for how to turn it on).
+#
+# To cut a release:
+#   uv version --bump minor   # or patch / major; updates pyproject.toml and uv.lock
+#   git commit -am "Release v$(uv version --short)" && git push
+#   git tag "v$(uv version --short)" && git push origin "v$(uv version --short)"
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+# Never run two releases of the same tag at once, and never cancel one halfway.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build distributions
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write      # to sign the attestation
+      attestations: write  # to store it on the repository
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+      - name: Check the tag matches pyproject.toml
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(uv version --short)"
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::Tag $TAG does not match the version in pyproject.toml ($version). Bump the version with 'uv version', commit it, and tag that commit as v$version."
+            exit 1
+          fi
+      - name: Build sdist and wheel
+        run: uv build
+      - name: Check package metadata
+        run: uvx twine check --strict dist/*
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-path: dist/*
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  github-release:
+    name: GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write  # to create the release and upload files to it
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Tags like v0.3.0rc1, v0.3.0b2 or v0.3.0a1 are marked as pre-releases.
+          prerelease=""
+          if [[ "$TAG" =~ (a|b|rc)[0-9]+$ ]]; then prerelease="--prerelease"; fi
+          gh release create "$TAG" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG" \
+            --generate-notes \
+            --verify-tag \
+            $prerelease
+
+  # Off by default. The name "kbforge" is already taken on PyPI by an unrelated
+  # project, so publishing needs a different distribution name in
+  # pyproject.toml first. Then:
+  #   1. On pypi.org, add a "trusted publisher" for this repo, workflow
+  #      release.yml, environment "pypi" (no API token needed).
+  #   2. In repo Settings → Environments, create an environment called "pypi".
+  #   3. In repo Settings → Secrets and variables → Actions → Variables,
+  #      add PUBLISH_TO_PYPI = true.
+  publish-pypi:
+    name: Publish to PyPI
+    needs: build
+    if: vars.PUBLISH_TO_PYPI == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+    permissions:
+      id-token: write  # trusted publishing: PyPI trusts this workflow via OIDC
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086  # v1.14.3
