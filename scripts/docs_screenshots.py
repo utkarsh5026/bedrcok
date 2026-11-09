@@ -206,16 +206,19 @@ def jupyter_lab(folder: Path, theme: str) -> Generator[str, None, None]:
             "--ServerApp.password=",
             f"--ServerApp.root_dir={folder}",
             "--ServerApp.disable_check_xsrf=True",
+            # Containers often run as root; Jupyter refuses to start as root without this.
+            *(["--allow-root"] if hasattr(os, "geteuid") and os.geteuid() == 0 else []),
         ],
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
     url = f"http://127.0.0.1:{port}"
+    direct = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # never send localhost via a proxy
     try:
         for _ in range(120):
             with contextlib.suppress(Exception):
-                urllib.request.urlopen(f"{url}/api", timeout=1)
+                direct.open(f"{url}/api", timeout=1)
                 break
             time.sleep(0.5)
         yield url
