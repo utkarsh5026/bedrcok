@@ -125,7 +125,15 @@ kbforge apply examples/kb.yaml
 
 ## 🚀 Quick start
 
-1. **Get the notebook.** Upload [`notebooks/getting_started.ipynb`](notebooks/getting_started.ipynb) to SageMaker and run it top to bottom.
+1. **Get the notebook** and run it top to bottom. Pick whichever is easiest:
+
+   - **Download it:** right-click [**getting_started.ipynb**](https://raw.githubusercontent.com/utkarsh5026/bedrcok/main/notebooks/getting_started.ipynb) and choose *Save link as…*, then drag the file into SageMaker's file browser. (Or open [the notebook on GitHub](notebooks/getting_started.ipynb) and use the *Download raw file* button.)
+   - **Fetch it straight into SageMaker:** open a terminal there (*File → New → Terminal*) and run:
+
+     ```bash
+     curl -LO https://raw.githubusercontent.com/utkarsh5026/bedrcok/main/notebooks/getting_started.ipynb
+     ```
+
 2. **Check permissions.** Your notebook role needs the permissions in [`docs/notebook-role-policy.json`](docs/notebook-role-policy.json).
    > [!TIP]
    > If IAM is locked down in your account, pass an existing Bedrock role as `role_arn=` and kbforge won't try to create one.
