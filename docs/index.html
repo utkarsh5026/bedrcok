@@ -268,18 +268,18 @@ kb.destroy(confirm=True)   # actually deletes</code></pre>
     <h2 id="wizard">Prefer clicking? The wizard</h2>
 <pre><code>import kbforge
 kbforge.wizard()</code></pre>
-    <p>A form that walks through the same three stages: describe, review the plan, build. <b>Show as code</b> gives you the equivalent Python and YAML, so you can move to a committed config later.</p>
+    <p>A form that walks through the same three stages: describe, review the plan, build. Each answer is checked as you type, choices with trade-offs (embedding model, vector store, chunking) are cards that say when to pick them, and a live preview shows the data flow and the exact AWS names kbforge will use. <b>Show as code</b> gives you the equivalent Python and YAML, so you can move to a committed config later.</p>
     <figure>
-      <a href="assets/screens/wizard-form.png"><img src="assets/screens/wizard-form.png" alt="The wizard form with name, S3 location, embedding model, dimensions, vector store and chunking fields" loading="lazy" width="2524" height="1050"></a>
-      <figcaption>Fill in a name and location; the defaults are marked "recommended".</figcaption>
+      <a href="assets/screens/wizard-form.png"><img src="assets/screens/wizard-form.png" alt="The wizard: a stepper header, numbered sections with option cards for documents, embedding model, vector store and chunking, and a live preview panel on the right" loading="lazy" width="2524" height="3476"></a>
+      <figcaption>Fill in a name and location; the defaults are tagged "Recommended". The side panel updates as you type.</figcaption>
     </figure>
     <figure>
-      <a href="assets/screens/wizard-plan.png"><img src="assets/screens/wizard-plan.png" alt="The wizard showing the plan after clicking Review plan, with the Build it button enabled" loading="lazy" width="2524" height="3470"></a>
-      <figcaption>"Review plan" shows the same plan card. "Build it" only unlocks when nothing is blocked.</figcaption>
+      <a href="assets/screens/wizard-plan.png"><img src="assets/screens/wizard-plan.png" alt="The wizard after clicking Review plan: the form folds into a one-line summary and the plan card appears below, with Build it enabled" loading="lazy" width="2524" height="3178"></a>
+      <figcaption>"Review plan" folds the form into a summary and shows the same plan card. "Build it" only unlocks when nothing is blocked; editing an answer asks you to review again.</figcaption>
     </figure>
     <figure>
-      <a href="assets/screens/wizard-built.png"><img src="assets/screens/wizard-built.png" alt="The wizard after building: progress card, ready card and an Ask box" loading="lazy" width="2524" height="3032"></a>
-      <figcaption>After building, an Ask box lets you try a question straight away.</figcaption>
+      <a href="assets/screens/wizard-built.png"><img src="assets/screens/wizard-built.png" alt="The wizard after building: every stage ticked, the progress card, the ready card and a Try it box for asking questions" loading="lazy" width="2524" height="2954"></a>
+      <figcaption>After building, a "Try it" box lets you ask a question straight away.</figcaption>
     </figure>
 
     <h2 id="options">Options</h2>

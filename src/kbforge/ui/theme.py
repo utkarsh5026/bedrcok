@@ -18,13 +18,13 @@ CSS = """
   --kbf-soft: var(--jp-layout-color2, #f6f8fa);
   --kbf-border: var(--jp-border-color2, #d1d9e0);
   --kbf-green: #1a7f37; --kbf-amber: #9a6700; --kbf-red: #cf222e;
-  --kbf-blue: #0969da; --kbf-grey: #59636e;
+  --kbf-blue: #0969da; --kbf-grey: #59636e; --kbf-purple: #8250df;
   font-family: var(--jp-ui-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif);
   font-size: 13px; line-height: 1.5; color: var(--kbf-fg);
   max-width: 980px; margin: 4px 0 8px;
 }
 body[data-jp-theme-light="false"] .kbf, body.vscode-dark .kbf, body.vscode-high-contrast .kbf {
-  --kbf-green: #3fb950; --kbf-amber: #d29922; --kbf-red: #f85149; --kbf-blue: #4493f8; --kbf-grey: #9198a1;
+  --kbf-green: #3fb950; --kbf-amber: #d29922; --kbf-red: #f85149; --kbf-blue: #4493f8; --kbf-grey: #9198a1; --kbf-purple: #a371f7;
   --kbf-border: var(--jp-border-color2, #3d444d); --kbf-soft: var(--jp-layout-color2, #151b23);
 }
 .kbf * { box-sizing: border-box; }

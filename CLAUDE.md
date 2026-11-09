@@ -21,7 +21,7 @@ uv run --group docs python scripts/docs_screenshots.py --chromium <path>   # reg
 - `src/kbforge/steps/`: one `Step` per AWS resource. `base.py` defines `Step`/`Action`/`Inspection`/`Ctx`; `iam.py`, `s3_vectors.py`, `opensearch.py` and `bedrock.py` implement them; `build_steps()` sets the order.
 - `src/kbforge/plan.py`: `make_plan()` (checks + `inspect()` every step, read-only) and `Plan.apply()` (re-inspects each step just before acting, so re-runs resume).
 - `src/kbforge/knowledge_base.py`: `KnowledgeBase`, the user-facing facade (`plan/apply/sync/ask/status/destroy`), plus `Answers` and `Status`.
-- `src/kbforge/ui/`: `theme.py` (scoped CSS using JupyterLab variables, so it follows light/dark), `html.py` (cards via `_repr_html_`), `text.py` (CLI output), `progress.py` (live-updating display; `progress_target` redirects it for the wizard).
+- `src/kbforge/ui/`: `theme.py` (scoped CSS using JupyterLab variables, so it follows light/dark), `html.py` (cards via `_repr_html_`), `text.py` (CLI output), `progress.py` (live-updating display; `progress_target` redirects it for the wizard), `wizard_style.py` (the wizard's stylesheet, scoped to `.kbf-wiz`, plus its HTML pieces: stepper, option cards, live preview) and `choices.py` (`OptionCards`, the clickable-card replacement for dropdowns).
 - `src/kbforge/wizard.py` (ipywidgets form), `guide.py` (getting-started card), `cli.py` (`kbforge` command).
 - `tests/fake_aws.py`: in-memory fake of every service used. Add any new boto3 call here as well.
 - `docs/`: GitHub Pages site (static `index.html`, served from `/docs` on `main`). Screenshots are generated, not hand-made.
