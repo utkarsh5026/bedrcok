@@ -4,7 +4,8 @@ kbforge init                    # write a starter kb.yaml (or: kbforge init kb.j
 kbforge plan kb.yaml            # checks + what would be built (kb.json works everywhere too)
 kbforge apply kb.yaml           # build it (asks before changing anything)
 kbforge sync kb.yaml            # re-ingest after documents change
-kbforge ask kb.yaml "question"  # try a query
+kbforge ask kb.yaml "question"  # try a query (add --answer for a written answer with citations)
+kbforge list                    # the knowledge bases kbforge built in this region
 kbforge status kb.yaml
 kbforge destroy kb.yaml         # delete it (asks first)
 kbforge models                  # list supported embedding models
@@ -135,7 +136,15 @@ def cmd_sync(args: argparse.Namespace) -> int:
 
 def cmd_ask(args: argparse.Namespace) -> int:
     """``kbforge ask``: print the best-matching chunks for a question."""
-    print(_load(args).ask(args.question, top_k=args.top_k))
+    print(_load(args).ask(args.question, top_k=args.top_k, answer=args.answer, model=args.model))
+    return 0
+
+
+def cmd_list(args: argparse.Namespace) -> int:
+    """``kbforge list``: the knowledge bases kbforge built in a region."""
+    from . import knowledge_bases
+
+    print(knowledge_bases(region=args.region))
     return 0
 
 
@@ -207,12 +216,18 @@ def build_parser() -> argparse.ArgumentParser:
     p = with_config("ask", "retrieve the best-matching chunks for a question")
     p.add_argument("question")
     p.add_argument("-k", "--top-k", type=int, default=5)
+    p.add_argument("-a", "--answer", action="store_true", help="have a model write an answer that cites the chunks")
+    p.add_argument("-m", "--model", help="model for --answer, e.g. nova-pro (implies --answer; default nova-lite)")
     p.set_defaults(func=cmd_ask)
 
     p = with_config("destroy", "delete the knowledge base and what kbforge created for it")
     p.add_argument("-y", "--yes", action="store_true", help="don't ask for confirmation")
     p.add_argument("--force", action="store_true", help="also delete resources without the kbforge tag")
     p.set_defaults(func=cmd_destroy)
+
+    p = sub.add_parser("list", help="list the knowledge bases kbforge built in a region")
+    p.add_argument("--region", help="region to look in (default: your AWS profile's region)")
+    p.set_defaults(func=cmd_list)
 
     sub.add_parser("models", help="list supported embedding models").set_defaults(func=cmd_models)
     p = sub.add_parser("parsers", help="list the models your account can use to parse documents")

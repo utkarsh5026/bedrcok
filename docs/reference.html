@@ -116,7 +116,8 @@ tags:
 <pre><code>kbforge init                      <span class="c"># write a starter kb.yaml (kbforge init kb.json for JSON)</span>
 kbforge plan kb.yaml              <span class="c"># checks + what would be built</span>
 kbforge apply kb.yaml             <span class="c"># asks before changing anything (-y to skip)</span>
-kbforge ask kb.yaml "question"
+kbforge ask kb.yaml "question"   <span class="c"># --answer for a written answer with citations</span>
+kbforge list                      <span class="c"># knowledge bases kbforge built in this region</span>
 kbforge sync kb.yaml
 kbforge status kb.yaml
 kbforge destroy kb.yaml
@@ -148,6 +149,7 @@ kbforge parsers                   <span class="c"># models your account can use 
       <pre><code id="policy">Loading…</code></pre>
     </details>
     <p>To list parsing models (<code>kbforge.parsing_models()</code>), also allow <code>bedrock:ListFoundationModels</code> and <code>bedrock:ListInferenceProfiles</code>; they're in the policy above. Without them you see kbforge's built-in list instead.</p>
+    <p><code>kb.ask(..., answer=True)</code> uses <code>bedrock:RetrieveAndGenerate</code> and calls the answer model with your own role, so that model needs to be enabled under Model access too. Both permissions are in the policy above.</p>
     <p>For OpenSearch Serverless also allow <code>aoss:CreateCollection</code>, <code>aoss:BatchGetCollection</code>, <code>aoss:DeleteCollection</code>, <code>aoss:CreateSecurityPolicy</code>, <code>aoss:GetSecurityPolicy</code>, <code>aoss:DeleteSecurityPolicy</code>, <code>aoss:CreateAccessPolicy</code>, <code>aoss:GetAccessPolicy</code>, <code>aoss:UpdateAccessPolicy</code>, <code>aoss:DeleteAccessPolicy</code>, <code>aoss:APIAccessAll</code> and <code>aoss:TagResource</code>.</p>
     <div class="callout"><b>IAM locked down?</b> Have an admin create a role that trusts <code>bedrock.amazonaws.com</code>, then pass <code>role_arn=</code>. The plan shows the exact permissions that role needs in the "IAM service role" fold-out, and you can drop the IAM statements above.</div>
 

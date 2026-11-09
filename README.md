@@ -130,6 +130,9 @@ Once it's built, the rest of the lifecycle is one call each:
 | `kb.sync()` | Re-ingests the source after documents are added, changed or removed |
 | `kb.status()` | Shows ids, health, and how the last sync went |
 | `kb.ask("…")` | Retrieves the best-matching chunks for a question |
+| `kb.ask("…", answer=True)` | Also has a model (Nova Lite by default; pick another with `model=`) write an answer that cites those chunks |
+| `kbforge.knowledge_bases()` | Lists the knowledge bases kbforge built in the region, with health and last sync |
+| `KnowledgeBase.open("name")` | Picks up a deployed knowledge base in a fresh notebook, without retyping its settings |
 | `kb.destroy()` | Shows what would be deleted; add `confirm=True` to delete it |
 
 <a id="how-it-works"></a>

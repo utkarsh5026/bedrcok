@@ -16,7 +16,8 @@ from ..steps import Action
 from .theme import SERIES, card, esc
 
 if TYPE_CHECKING:
-    from ..knowledge_base import Answers, Status
+    from ..deployed import KnowledgeBases, Status
+    from ..knowledge_base import Answers
     from ..parsers import ParsingModels
     from ..plan import ApplyResult, Plan, PlanItem
 
@@ -271,30 +272,99 @@ def source_location(loc: Dict[str, Any]) -> str:
     return loc.get("type", "unknown source")
 
 
-def render_answers(answers: Answers) -> str:
-    """Search results from ``kb.ask``: best chunks first, each with its score and source document."""
-    if not answers.results:
-        body = '<div class="section muted">No matching chunks. Has the knowledge base been synced?</div>'
-    else:
-        top = max(r.get("score", 0) for r in answers.results) or 1
-        items = []
-        for i, r in enumerate(answers.results, 1):
-            text = r.get("content", {}).get("text", "")
-            score = r.get("score", 0)
-            short = text if len(text) <= 600 else text[:600].rsplit(" ", 1)[0] + " …"
-            more = f"<details><summary>show full chunk</summary>{_code(text)}</details>" if short != text else ""
-            items.append(
-                f'<div class="result"><div class="row"><span class="num">{i}</span>'
-                f'<span class="score"><i style="width:{100 * score / top:.0f}%"></i></span>'
-                f'<span class="mono muted">{score:.3f}</span>'
-                f'<span class="res mono">{esc(source_location(r.get("location", {})))}</span></div>'
-                f'<div class="snippet">{esc(short)}</div>{more}</div>'
+def _render_chunks(answers: Answers) -> str:
+    """The retrieved (or cited) chunks, numbered, each with its score when there is one and its source."""
+    scores = [r["score"] for r in answers.results if "score" in r]
+    top = max(scores, default=0) or 1
+    items = []
+    for i, r in enumerate(answers.results, 1):
+        text = r.get("content", {}).get("text", "")
+        short = text if len(text) <= 600 else text[:600].rsplit(" ", 1)[0] + " …"
+        more = f"<details><summary>show full chunk</summary>{_code(text)}</details>" if short != text else ""
+        score = ""
+        if "score" in r:
+            score = (
+                f'<span class="score"><i style="width:{100 * r["score"] / top:.0f}%"></i></span>'
+                f'<span class="mono muted">{r["score"]:.3f}</span>'
             )
-        body = f'<div class="section">{"".join(items)}</div>'
-    return card(
+        items.append(
+            f'<div class="result"><div class="row"><span class="num">{i}</span>{score}'
+            f'<span class="res mono">{esc(source_location(r.get("location", {})))}</span></div>'
+            f'<div class="snippet">{esc(short)}</div>{more}</div>'
+        )
+    return "".join(items)
+
+
+def render_answers(answers: Answers) -> str:
+    """The card for ``kb.ask``: the written answer with citation markers (if asked for), then the chunks."""
+    head = (
         f'<div class="head"><div class="eyebrow">kbforge · ask · {esc(answers.kb_name)}</div>'
-        f'<h2>{esc(answers.question)}</h2><div class="muted">{len(answers.results)} chunk(s) retrieved</div></div>'
-        + body
+        f"<h2>{esc(answers.question)}</h2>"
+    )
+    if answers.answer is None:
+        if not answers.results:
+            body = '<div class="section muted">No matching chunks. Has the knowledge base been synced?</div>'
+        else:
+            body = f'<div class="section">{_render_chunks(answers)}</div>'
+        return card(f'{head}<div class="muted">{len(answers.results)} chunk(s) retrieved</div></div>{body}')
+
+    text = "".join(
+        esc(piece) + "".join(f'<sup class="cite">[{n}]</sup>' for n in numbers)
+        for piece, numbers in answers.answer_with_markers()
+    )
+    if answers.results:
+        sources = f'<div class="section"><h3>Sources</h3>{_render_chunks(answers)}</div>'
+    else:
+        sources = (
+            '<div class="section muted">The answer cites no passages, so it may not come from your documents. '
+            "Run <code>kb.ask(question)</code> without <code>answer=True</code> to see what the search finds.</div>"
+        )
+    return card(
+        f'{head}<div class="muted">Answered by <span class="mono">{esc(answers.model)}</span> from '
+        f"{len(answers.results)} cited chunk(s)</div></div>"
+        f'<div class="section"><div class="answer">{text}</div></div>{sources}'
+    )
+
+
+def render_knowledge_bases(found: KnowledgeBases) -> str:
+    """The table for ``kbforge.knowledge_bases()``: every KB kbforge built in a region."""
+    note = (
+        f'<div class="warn c-amber">{found.unreadable} other knowledge base(s) couldn\'t be checked because your '
+        "role can't read their tags (bedrock:ListTagsForResource).</div>"
+        if found.unreadable
+        else ""
+    )
+    if not found.items:
+        body = (
+            f'<div class="section muted">kbforge hasn\'t built any knowledge bases in {esc(found.region)} yet. '
+            "Run <code>kbforge.guide()</code> to start one, or pass <code>region=...</code> to look elsewhere.</div>"
+        )
+        example = ""
+    else:
+        rows = "".join(
+            f'<tr><td class="mono nw">{esc(s.name)}</td>'
+            f'<td><span class="badge {"c-green" if s.kb_status == "ACTIVE" else "c-amber"}">'
+            f"{esc(s.kb_status.lower())}</span></td>"
+            f'<td class="mono">{esc(s.source)}</td><td>{esc(s.last_sync_text)}</td>'
+            f'<td class="muted">{esc(s.model)} · {esc(s.store)}</td></tr>'
+            for s in found
+        )
+        body = (
+            '<div class="section"><div class="tbl"><table><thead><tr><th>Name</th><th>Status</th><th>Source</th>'
+            f"<th>Last sync</th><th>Model · store</th></tr></thead><tbody>{rows}</tbody></table></div></div>"
+        )
+        example = (
+            '<div class="section next"><h3>Pick one up</h3>'
+            + _code(
+                f'kb = KnowledgeBase.open("{found.names[0]}")\nkb.ask("…")   # or kb.sync(), kb.status(), kb.destroy()'
+            )
+            + "</div>"
+        )
+    return card(
+        '<div class="head"><div class="eyebrow">kbforge · knowledge bases</div>'
+        f"<h2>{len(found)} knowledge base(s) built by kbforge</h2>"
+        + _chips([("region", found.region)])
+        + f"{note}</div>{body}{example}"
     )
 
 

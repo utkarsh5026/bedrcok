@@ -159,6 +159,7 @@ kb</code></pre>
         <h3>Ask it something</h3>
 <pre><code>kb.ask(<span class="s">"How many weeks of parental leave?"</span>)</code></pre>
         <p>You'll see the passages that match best, with a score and the file each came from. If the right passages come back, your knowledge base is ready to plug into a chatbot or app.</p>
+        <p>Want a written answer too? <code>kb.ask("…", answer=True)</code> has a model answer from those passages, with numbered citations to each one it used.</p>
       </div>
       <figure class="shot"><a href="assets/screens/ask.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/ask-dark.png"><img src="assets/screens/ask.png" alt="Three retrieved chunks with relevance bars, scores and the S3 path of each source document" loading="lazy" width="2524" height="870"></picture></a></figure>
     </div>
@@ -167,11 +168,12 @@ kb</code></pre>
       <div class="text">
         <div class="num">Afterwards</div>
         <h3>Keep it fresh, or clean it up</h3>
-<pre><code>kb.sync()                  <span class="c"># documents changed</span>
+<pre><code>kb = KnowledgeBase.open(<span class="s">"hr-policies"</span>)   <span class="c"># in a new notebook</span>
+kb.sync()                  <span class="c"># documents changed</span>
 kb.status()                <span class="c"># is everything healthy?</span>
 kb.destroy()               <span class="c"># preview the delete</span>
 kb.destroy(confirm=<span class="k">True</span>)   <span class="c"># actually delete</span></code></pre>
-        <p><code>destroy()</code> only removes what kbforge created. <b>Your documents are never touched.</b></p>
+        <p>Forgot the name? <code>kbforge.knowledge_bases()</code> lists every one kbforge built in the region. <code>destroy()</code> only removes what kbforge created. <b>Your documents are never touched.</b></p>
       </div>
       <figure class="shot"><a href="assets/screens/status.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/status-dark.png"><img src="assets/screens/status.png" alt="Status card: knowledge base ID, region, embedding model, vector store, data source and last sync" loading="lazy" width="2524" height="704"></picture></a></figure>
     </div>

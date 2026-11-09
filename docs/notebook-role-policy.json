@@ -17,6 +17,8 @@
         "bedrock:GetIngestionJob",
         "bedrock:ListIngestionJobs",
         "bedrock:Retrieve",
+        "bedrock:RetrieveAndGenerate",
+        "bedrock:GetInferenceProfile",
         "bedrock:TagResource",
         "bedrock:ListTagsForResource",
         "bedrock:InvokeModel",

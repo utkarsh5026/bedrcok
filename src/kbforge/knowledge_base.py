@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional, Tuple, Union
 
@@ -24,32 +23,66 @@ import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from .aws import Aws
+from .deployed import Status, find_data_source, make_status, open_spec
 from .errors import KBForgeError, did_you_mean
+from .models import DEFAULT_ANSWER_MODEL, resolve_answer_model
 from .parsers import ParsingModels, list_parsing_models
 from .plan import ApplyResult, Plan, make_plan
-from .spec import VECTOR_STORES, Chunking, KBSpec, Parsing, Source
-from .steps import Ctx, describe_stats, explain_error, latest_ingestion_job, run_ingestion
-from .steps.bedrock import DataSourceStep, KnowledgeBaseStep, describe_parsing
+from .spec import Chunking, KBSpec, Parsing, Source
+from .steps import Ctx, describe_stats, explain_error, run_ingestion
+from .steps.bedrock import DataSourceStep, KnowledgeBaseStep
 
-#: Bedrock's storage type names mapped to the labels kbforge shows.
-STORE_LABELS = {
-    "S3_VECTORS": VECTOR_STORES["s3_vectors"],
-    "OPENSEARCH_SERVERLESS": VECTOR_STORES["opensearch_serverless"],
-}
+__all__ = ["Answers", "KBForgeError", "KnowledgeBase", "Status"]
 
 
 @dataclass
 class Answers:
-    """The chunks a knowledge base returned for a question, best match first."""
+    """What a knowledge base returned for a question.
+
+    ``results`` are the retrieved chunks, best match first. When an answer was asked for
+    (``kb.ask(..., answer=True)``), ``answer`` holds the model's reply and ``citations`` says
+    which chunks back up which part of it; ``results`` are then the chunks it cited.
+    """
 
     question: str
     kb_name: str
     results: List[Dict[str, Any]] = field(default_factory=list)
+    #: The generated answer, or None when only retrieval was asked for.
+    answer: Optional[str] = None
+    #: Bedrock's citations: each says which part of the answer (``span``) which chunks support.
+    citations: List[Dict[str, Any]] = field(default_factory=list)
+    #: The model that wrote the answer, e.g. ``us.amazon.nova-lite-v1:0``.
+    model: str = ""
 
     @property
     def texts(self) -> List[str]:
         """Just the chunk texts, e.g. to paste into a prompt."""
         return [r.get("content", {}).get("text", "") for r in self.results]
+
+    def answer_with_markers(self) -> List[Tuple[str, List[int]]]:
+        """The answer split into pieces, each with the numbers of the chunks (in ``results``) it cites.
+
+        Used to draw ``[1]``-style markers after each cited passage. Text no citation covers
+        comes back as a piece with no numbers.
+        """
+        if self.answer is None:
+            return []
+        keys = [_chunk_key(r) for r in self.results]
+        pieces: List[Tuple[str, List[int]]] = []
+        position = 0
+        for citation in self.citations:
+            part = citation.get("generatedResponsePart", {}).get("textResponsePart", {})
+            span = part.get("span", {})
+            end = span.get("end")
+            if end is None or end < position:
+                continue
+            end = min(end + 1, len(self.answer))  # Bedrock's span end is inclusive
+            numbers = sorted({keys.index(_chunk_key(ref)) + 1 for ref in citation.get("retrievedReferences", [])})
+            pieces.append((self.answer[position:end], numbers))
+            position = end
+        if position < len(self.answer):
+            pieces.append((self.answer[position:], []))
+        return pieces
 
     def _repr_html_(self) -> str:
         from .ui.html import render_answers
@@ -62,50 +95,21 @@ class Answers:
         return render_answers(self)
 
 
-@dataclass
-class Status:
-    """A snapshot of a deployed knowledge base and its most recent sync."""
+def _chunk_key(result: Dict[str, Any]) -> Tuple[str, str]:
+    """What makes a retrieved chunk the same chunk: its text and where it came from."""
+    return (result.get("content", {}).get("text", ""), repr(result.get("location", {})))
 
-    name: str
-    region: str
-    exists: bool
-    kb_id: str = ""
-    kb_status: str = ""
-    model: str = ""
-    store: str = ""
-    ds_id: str = ""
-    source: str = ""
-    parsing: str = ""
-    last_sync: Optional[Dict[str, Any]] = None
 
-    def rows(self) -> List[Tuple[str, str]]:
-        """Label/value pairs, in display order."""
-        sync = "never"
-        if self.last_sync:
-            job = self.last_sync
-            started = job.get("startedAt")
-            when = started.strftime("%Y-%m-%d %H:%M") if isinstance(started, datetime) else str(started or "")
-            sync = f"{job['status'].lower()} · {when} · {describe_stats(job.get('statistics', {}))}"
-        return [
-            ("Knowledge base ID", self.kb_id),
-            ("Region", self.region),
-            ("Embedding model", self.model),
-            ("Vector store", self.store),
-            ("Data source ID", self.ds_id),
-            ("Source", self.source),
-            ("Parsing", self.parsing),
-            ("Last sync", sync),
-        ]
-
-    def _repr_html_(self) -> str:
-        from .ui.html import render_status
-
-        return render_status(self)
-
-    def __str__(self) -> str:
-        from .ui.text import render_status
-
-        return render_status(self)
+def _cited_chunks(citations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Every chunk the citations refer to, once each, in the order they're first cited."""
+    seen, chunks = set(), []
+    for citation in citations:
+        for ref in citation.get("retrievedReferences", []):
+            key = _chunk_key(ref)
+            if key not in seen:
+                seen.add(key)
+                chunks.append(ref)
+    return chunks
 
 
 class KnowledgeBase:
@@ -200,6 +204,23 @@ class KnowledgeBase:
             spec.region = region
         return cls.from_spec(spec, session)
 
+    @classmethod
+    def open(cls, name: str, region: Optional[str] = None, session: Optional[boto3.Session] = None) -> KnowledgeBase:
+        """Pick up a knowledge base that's already deployed, without retyping its settings.
+
+        Reads the knowledge base and its data source from AWS (read-only) and rebuilds the
+        definition: source, embedding model, vector store, parsing and chunking. Use it in a
+        fresh notebook to ``sync()``, ``ask()`` or ``destroy()`` a knowledge base built earlier,
+        possibly by someone else. ``kb.save("kb.yaml")`` then writes the definition to a file.
+        Run ``kbforge.knowledge_bases()`` to see the names you can open.
+        """
+        aws = Aws(region=region, session=session)
+        with friendly_aws_errors():
+            spec = open_spec(aws, name)
+        kb = cls.from_spec(spec, session)
+        kb._aws = aws
+        return kb
+
     @property
     def name(self) -> str:
         """The knowledge base's name."""
@@ -247,22 +268,49 @@ class KnowledgeBase:
         progress.close()
         return self.status()
 
-    def ask(self, question: str, top_k: int = 5) -> Answers:
-        """Search the knowledge base and show the best-matching chunks with their sources.
+    def ask(self, question: str, top_k: int = 5, answer: bool = False, model: Optional[str] = None) -> Answers:
+        """Search the knowledge base for a question and show what comes back.
 
-        This is retrieval only (no LLM answer), which is the quickest way to judge whether
-        chunking and embeddings are working for your documents.
+        By default this is retrieval only: the best-matching chunks with their scores and
+        sources, which is the quickest way to judge whether chunking and embeddings work for
+        your documents. With ``answer=True`` a model also reads those chunks and writes an
+        answer, with numbered citations pointing at the chunks it used. ``model`` picks that
+        model (an alias such as ``"nova-pro"``, or a Bedrock model id) and implies ``answer=True``.
         """
+        if model is not None:
+            answer = True
+        writer = resolve_answer_model(model or DEFAULT_ANSWER_MODEL) if answer else None
         with friendly_aws_errors():
             ctx = self._locate(data_source=False)
             if not ctx.out.get("kb_id"):
                 raise KBForgeError(f"'{self.name}' hasn't been created yet. Run kb.apply() first.")
-            response = self.aws.client("bedrock-agent-runtime").retrieve(
-                knowledgeBaseId=ctx.out["kb_id"],
-                retrievalQuery={"text": question},
-                retrievalConfiguration={"vectorSearchConfiguration": {"numberOfResults": top_k}},
+            runtime = self.aws.client("bedrock-agent-runtime")
+            search = {"vectorSearchConfiguration": {"numberOfResults": top_k}}
+            if writer is None:
+                response = runtime.retrieve(
+                    knowledgeBaseId=ctx.out["kb_id"], retrievalQuery={"text": question}, retrievalConfiguration=search
+                )
+                return Answers(question, self.name, response.get("retrievalResults", []))
+            response = runtime.retrieve_and_generate(
+                input={"text": question},
+                retrieveAndGenerateConfiguration={
+                    "type": "KNOWLEDGE_BASE",
+                    "knowledgeBaseConfiguration": {
+                        "knowledgeBaseId": ctx.out["kb_id"],
+                        "modelArn": writer.arn(self.aws.region, self.aws.account_id),
+                        "retrievalConfiguration": search,
+                    },
+                },
             )
-        return Answers(question, self.name, response.get("retrievalResults", []))
+        citations = response.get("citations", [])
+        return Answers(
+            question,
+            self.name,
+            _cited_chunks(citations),
+            answer=response.get("output", {}).get("text", ""),
+            citations=citations,
+            model=writer.invoke_id(self.aws.region),
+        )
 
     def status(self) -> Status:
         """Where things stand: ids, health, and how the last sync went."""
@@ -274,31 +322,8 @@ class KnowledgeBase:
         kb = KnowledgeBaseStep().find(Ctx(self.spec, self.aws))
         if kb is None:
             return Status(self.name, self.aws.region, exists=False)
-        ctx = Ctx(self.spec, self.aws, out={"kb_id": kb["knowledgeBaseId"]})
-        ds = DataSourceStep().find(ctx)
-        model = kb.get("knowledgeBaseConfiguration", {}).get("vectorKnowledgeBaseConfiguration", {})
-        store_type = kb.get("storageConfiguration", {}).get("type", "")
-        return Status(
-            name=self.name,
-            region=self.aws.region,
-            exists=True,
-            kb_id=kb["knowledgeBaseId"],
-            kb_status=kb["status"],
-            model=model.get("embeddingModelArn", "").split("/")[-1],
-            store=STORE_LABELS.get(store_type, store_type),
-            ds_id=ds["dataSourceId"] if ds else "",
-            source=self.spec.source.describe(),
-            parsing=self._parser_label(ds),
-            last_sync=latest_ingestion_job(self.aws, kb["knowledgeBaseId"], ds["dataSourceId"]) if ds else None,
-        )
-
-    @staticmethod
-    def _parser_label(ds: Optional[Dict[str, Any]]) -> str:
-        """How an existing data source parses documents, for the status card ("" if there's no data source)."""
-        if not ds:
-            return ""
-        parser = describe_parsing(ds.get("vectorIngestionConfiguration", {}).get("parsingConfiguration"))
-        return "Default parser" if parser == "the default parser" else parser
+        ds = find_data_source(self.aws, kb["knowledgeBaseId"], self.spec.names.data_source)
+        return make_status(self.aws, self.name, kb, ds, self.spec.source.describe())
 
     def parsing_models(self) -> ParsingModels:
         """The models in this knowledge base's region that can parse documents, and what to pass to use them.

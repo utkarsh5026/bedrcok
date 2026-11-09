@@ -16,7 +16,8 @@ from ..steps import Action, describe_stats
 from .html import source_location
 
 if TYPE_CHECKING:
-    from ..knowledge_base import Answers, Status
+    from ..deployed import KnowledgeBases, Status
+    from ..knowledge_base import Answers
     from ..parsers import ParsingModels
     from ..plan import ApplyResult, Plan
 
@@ -119,15 +120,38 @@ def render_apply_result(result: ApplyResult) -> str:
 
 
 def render_answers(answers: Answers) -> str:
-    """Retrieved chunks, best first."""
+    """The written answer with [n] citation markers (if asked for), then the chunks, best first."""
     lines = [paint(f"\n{answers.question}", "bold")]
-    if not answers.results:
+    if answers.answer is not None:
+        text = "".join(piece + "".join(f"[{n}]" for n in numbers) for piece, numbers in answers.answer_with_markers())
+        lines.extend(_wrap(paragraph, 2) for paragraph in text.splitlines() if paragraph.strip())
+        lines.append(paint(f"\n  Answered by {answers.model}. Sources:", "grey"))
+        if not answers.results:
+            lines.append("  None cited: the answer may not come from your documents.")
+    elif not answers.results:
         lines.append("  No matching chunks. Has the knowledge base been synced?")
     for i, r in enumerate(answers.results, 1):
         text = " ".join(r.get("content", {}).get("text", "").split())
-        score = paint(f"{r.get('score', 0):.3f}", "blue")
-        lines.append(f"\n  {i}. {score}  {paint(source_location(r.get('location', {})), 'grey')}")
+        score = paint(f"{r['score']:.3f}", "blue") + "  " if "score" in r else ""
+        lines.append(f"\n  {i}. {score}{paint(source_location(r.get('location', {})), 'grey')}")
         lines.append(_wrap(text[:400] + (" …" if len(text) > 400 else ""), 5))
+    return "\n".join(lines)
+
+
+def render_knowledge_bases(found: KnowledgeBases) -> str:
+    """Every knowledge base kbforge built in a region, one per line."""
+    lines = [paint(f"\nKnowledge bases built by kbforge in {found.region}: {len(found)}", "bold")]
+    if not found.items:
+        lines.append("  None yet. Run `kbforge init` to describe one.")
+    for s in found:
+        colour = "green" if s.kb_status == "ACTIVE" else "amber"
+        lines.append(f"\n  {paint(s.name, 'bold')}  {paint(s.kb_status.lower(), colour)}  {paint(s.source, 'grey')}")
+        lines.append(f"    last sync: {s.last_sync_text}")
+        lines.append(f"    {s.model} · {s.store}")
+    if found.unreadable:
+        lines.append(
+            paint(f"\n  {found.unreadable} other knowledge base(s) couldn't be checked (no access to tags).", "amber")
+        )
     return "\n".join(lines)
 
 
