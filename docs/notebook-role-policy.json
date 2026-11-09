@@ -1,0 +1,81 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "BedrockKnowledgeBases",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:CreateKnowledgeBase",
+        "bedrock:GetKnowledgeBase",
+        "bedrock:ListKnowledgeBases",
+        "bedrock:DeleteKnowledgeBase",
+        "bedrock:CreateDataSource",
+        "bedrock:GetDataSource",
+        "bedrock:ListDataSources",
+        "bedrock:DeleteDataSource",
+        "bedrock:StartIngestionJob",
+        "bedrock:GetIngestionJob",
+        "bedrock:ListIngestionJobs",
+        "bedrock:Retrieve",
+        "bedrock:TagResource",
+        "bedrock:ListTagsForResource",
+        "bedrock:InvokeModel"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadSourceBucket",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+      "Resource": "arn:aws:s3:::YOUR-DOCUMENTS-BUCKET"
+    },
+    {
+      "Sid": "S3VectorsList",
+      "Effect": "Allow",
+      "Action": ["s3vectors:ListVectorBuckets"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "S3VectorsManage",
+      "Effect": "Allow",
+      "Action": [
+        "s3vectors:CreateVectorBucket",
+        "s3vectors:GetVectorBucket",
+        "s3vectors:DeleteVectorBucket",
+        "s3vectors:CreateIndex",
+        "s3vectors:GetIndex",
+        "s3vectors:ListIndexes",
+        "s3vectors:DeleteIndex",
+        "s3vectors:TagResource",
+        "s3vectors:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:s3vectors:*:*:bucket/kbforge-*",
+        "arn:aws:s3vectors:*:*:bucket/kbforge-*/index/*"
+      ]
+    },
+    {
+      "Sid": "KnowledgeBaseServiceRole",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:GetRole",
+        "iam:TagRole",
+        "iam:PutRolePolicy",
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:DeleteRolePolicy",
+        "iam:ListAttachedRolePolicies",
+        "iam:DeleteRole"
+      ],
+      "Resource": "arn:aws:iam::*:role/AmazonBedrockExecutionRoleForKnowledgeBase_kbf-*"
+    },
+    {
+      "Sid": "PassServiceRoleToBedrock",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::*:role/AmazonBedrockExecutionRoleForKnowledgeBase_kbf-*",
+      "Condition": {"StringEquals": {"iam:PassedToService": "bedrock.amazonaws.com"}}
+    }
+  ]
+}

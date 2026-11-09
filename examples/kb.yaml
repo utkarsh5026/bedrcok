@@ -1,0 +1,39 @@
+# A knowledge base described as config. Commit this next to your project and run:
+#   kbforge plan examples/kb.yaml
+#   kbforge apply examples/kb.yaml
+# or in a notebook:  KnowledgeBase.from_yaml("examples/kb.yaml").plan()
+
+name: hr-policies
+region: us-east-1
+description: HR policy documents for the internal assistant
+
+# Where the documents live. Either an S3 location...
+source:
+  s3: s3://my-company-docs/hr/
+# ...or a list of sites to crawl:
+# source:
+#   web: [https://docs.example.com]
+#   scope: HOST_ONLY        # or SUBDOMAINS
+#   max_pages: 500
+
+# titan-v2 (default) | cohere-en | cohere-multi | titan-v1
+embedding: titan-v2
+dimensions: 1024
+
+# s3_vectors (default, cheapest, serverless) | opensearch_serverless
+vector_store: s3_vectors
+
+# fixed (default) | hierarchical | semantic | none
+chunking:
+  strategy: fixed
+  max_tokens: 300
+  overlap_percent: 20
+
+# Optional: reuse a role your admin already made instead of creating one.
+# role_arn: arn:aws:iam::123456789012:role/AmazonBedrockExecutionRoleForKnowledgeBase_hr
+
+# Run the first ingestion right after creating everything.
+sync: true
+
+tags:
+  team: people-ops
