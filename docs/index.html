@@ -62,7 +62,7 @@ p { margin: 10px 0; }
 .sub { color: var(--muted); margin-top: 0; }
 
 figure { margin: 18px 0 28px; }
-figure a { display: block; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); background: #fff; }
+figure a { display: block; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; box-shadow: var(--shadow); background: var(--bg); }
 figure img { display: block; width: 100%; height: auto; }
 figure.narrow { max-width: 720px; }
 figcaption { font-size: 14px; color: var(--muted); margin-top: 10px; }
@@ -156,7 +156,7 @@ footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 14
         <a class="btn" href="https://github.com/utkarsh5026/bedrcok/blob/main/notebooks/getting_started.ipynb">Open the starter notebook</a>
       </div>
       <figure>
-        <a href="assets/screens/jupyterlab.png"><img src="assets/screens/jupyterlab.png" alt="JupyterLab showing a kbforge plan card with the data flow, preflight checks and the list of resources to build" width="2720" height="1800"></a>
+        <a href="assets/screens/jupyterlab.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/jupyterlab-dark.png"><img src="assets/screens/jupyterlab.png" alt="JupyterLab showing a kbforge plan card with the data flow, preflight checks and the list of resources to build" width="2720" height="1800"></picture></a>
         <figcaption>A plan, rendered right in the notebook. Nothing in AWS has changed at this point.</figcaption>
       </figure>
     </section>
@@ -182,7 +182,7 @@ footer { border-top: 1px solid var(--border); color: var(--muted); font-size: 14
 <pre><code>import kbforge
 kbforge.guide()</code></pre>
     <figure class="narrow">
-      <a href="assets/screens/guide.png"><img src="assets/screens/guide.png" alt="The kbforge getting-started card listing four steps with code" loading="lazy" width="2524" height="1570"></a>
+      <a href="assets/screens/guide.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/guide-dark.png"><img src="assets/screens/guide.png" alt="The kbforge getting-started card listing four steps with code" loading="lazy" width="2524" height="1846"></picture></a>
     </figure>
     <div class="callout">The quickest start is the <a href="https://github.com/utkarsh5026/bedrcok/blob/main/notebooks/getting_started.ipynb">starter notebook</a>. Upload it to SageMaker and run it top to bottom.</div>
 
@@ -194,7 +194,7 @@ kb = KnowledgeBase("hr-policies", source="s3://my-company-docs/hr/")
 kb</code></pre>
     <p>Creating the object doesn't call AWS. When displayed, it shows the data flow it's going to set up:</p>
     <figure>
-      <a href="assets/screens/describe.png"><img src="assets/screens/describe.png" alt="A card showing the data flow: source, chunking, embeddings, vector store, knowledge base" loading="lazy" width="2524" height="906"></a>
+      <a href="assets/screens/describe.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/describe-dark.png"><img src="assets/screens/describe.png" alt="A card showing the data flow: source, chunking, embeddings, vector store, knowledge base" loading="lazy" width="2524" height="950"></picture></a>
     </figure>
 
     <h2 id="plan">2 · Read the plan</h2>
@@ -205,7 +205,7 @@ kb</code></pre>
       <li><b>What will be built.</b> One row per AWS resource, in order, with its exact name and a badge saying what will happen. Fold-outs show details such as the IAM policy that will be attached.</li>
     </ol>
     <figure>
-      <a href="assets/screens/plan.png"><img src="assets/screens/plan.png" alt="Full plan card: summary, data flow, four preflight checks and six numbered steps with CREATE and RUN badges" loading="lazy" width="2524" height="2470"></a>
+      <a href="assets/screens/plan.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/plan-dark.png"><img src="assets/screens/plan.png" alt="Full plan card: summary, data flow, four preflight checks and six numbered steps with CREATE and RUN badges" loading="lazy" width="2524" height="2516"></picture></a>
       <figcaption>A plan for a fresh account: five resources to create, then the first sync.</figcaption>
     </figure>
     <p>What the badges mean:</p>
@@ -221,7 +221,7 @@ kb</code></pre>
     <h3 id="blocked">When the plan is blocked</h3>
     <p>If a check fails, the plan says so in red and <code>apply()</code> refuses to start. Nothing is half-built. In this example the bucket name has a typo:</p>
     <figure>
-      <a href="assets/screens/blocked.png"><img src="assets/screens/blocked.png" alt="A plan with a red Blocked banner: the source bucket finanse-reports doesn't exist" loading="lazy" width="2524" height="2522"></a>
+      <a href="assets/screens/blocked.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/blocked-dark.png"><img src="assets/screens/blocked.png" alt="A plan with a red Blocked banner: the source bucket finanse-reports doesn't exist" loading="lazy" width="2524" height="2566"></picture></a>
     </figure>
     <p>Fix the cause, run <code>kb.plan()</code> again, and carry on. Common blockers and their fixes are under <a href="#troubleshooting">Troubleshooting</a>.</p>
 
@@ -229,12 +229,12 @@ kb</code></pre>
 <pre><code>kb.apply()</code></pre>
     <p>The card updates in place while it works. Long waits, like a new collection or the first ingestion, show what's happening instead of leaving the cell looking frozen:</p>
     <figure>
-      <a href="assets/screens/progress.png"><img src="assets/screens/progress.png" alt="Progress card mid-run: five steps done with timings, the ingestion step spinning with a live status line" loading="lazy" width="2360" height="1000"></a>
+      <a href="assets/screens/progress.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/progress-dark.png"><img src="assets/screens/progress.png" alt="Progress card mid-run: five steps done with timings, the ingestion step spinning with a live status line" loading="lazy" width="2360" height="1000"></picture></a>
       <figcaption>Mid-run: the first sync is in progress, with a live document count.</figcaption>
     </figure>
     <p>When it finishes, you get the IDs and the code to use the knowledge base from any application:</p>
     <figure>
-      <a href="assets/screens/apply.png"><img src="assets/screens/apply.png" alt="Finished build: all six steps ticked, then a Ready card with the knowledge base ID, data source ID and example code" loading="lazy" width="2524" height="1922"></a>
+      <a href="assets/screens/apply.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/apply-dark.png"><img src="assets/screens/apply.png" alt="Finished build: all six steps ticked, then a Ready card with the knowledge base ID, data source ID and example code" loading="lazy" width="2524" height="1972"></picture></a>
     </figure>
     <div class="callout warn"><b>If a step fails</b>, the card stops at that step and explains the error in plain English, such as a missing permission or a quota. Fix it and run <code>kb.apply()</code> again. Anything already created is reused.</div>
 
@@ -242,7 +242,7 @@ kb</code></pre>
 <pre><code>kb.ask("How many weeks of parental leave do we get?")</code></pre>
     <p>This shows the chunks the knowledge base retrieves, best match first, with their scores and source documents. It's retrieval only (no LLM answer), which makes it the quickest way to judge whether chunking and embeddings suit your documents.</p>
     <figure>
-      <a href="assets/screens/ask.png"><img src="assets/screens/ask.png" alt="Three retrieved chunks with relevance bars, scores and the S3 path of each source document" loading="lazy" width="2524" height="870"></a>
+      <a href="assets/screens/ask.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/ask-dark.png"><img src="assets/screens/ask.png" alt="Three retrieved chunks with relevance bars, scores and the S3 path of each source document" loading="lazy" width="2524" height="870"></picture></a>
     </figure>
 
     <h2 id="later">Sync, status &amp; clean up</h2>
@@ -250,7 +250,7 @@ kb</code></pre>
 <pre><code>kb.sync()     # re-ingest: picks up new, changed and deleted files
 kb.status()   # ids, health and how the last sync went</code></pre>
     <figure class="narrow">
-      <a href="assets/screens/status.png"><img src="assets/screens/status.png" alt="Status card: knowledge base ID, region, embedding model, vector store, data source and last sync" loading="lazy" width="2524" height="704"></a>
+      <a href="assets/screens/status.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/status-dark.png"><img src="assets/screens/status.png" alt="Status card: knowledge base ID, region, embedding model, vector store, data source and last sync" loading="lazy" width="2524" height="704"></picture></a>
     </figure>
     <h3>Save the definition</h3>
     <p>Write it to YAML so teammates (or CI) can rebuild the same thing:</p>
@@ -261,7 +261,7 @@ kb = KnowledgeBase.from_yaml("kb.yaml")</code></pre>
 <pre><code>kb.destroy()               # shows what would be deleted, deletes nothing
 kb.destroy(confirm=True)   # actually deletes</code></pre>
     <figure>
-      <a href="assets/screens/destroy.png"><img src="assets/screens/destroy.png" alt="Destroy plan listing the data source, knowledge base, role, index and vector bucket in deletion order" loading="lazy" width="2524" height="1658"></a>
+      <a href="assets/screens/destroy.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/destroy-dark.png"><img src="assets/screens/destroy.png" alt="Destroy plan listing the data source, knowledge base, role, index and vector bucket in deletion order" loading="lazy" width="2524" height="1704"></picture></a>
     </figure>
     <p>Your source documents are never touched. Anything kbforge didn't create (it checks for its <code>managed-by: kbforge</code> tag) and any role you supplied are kept. Use <code>destroy(confirm=True, force=True)</code> only if you're sure.</p>
 
@@ -270,15 +270,15 @@ kb.destroy(confirm=True)   # actually deletes</code></pre>
 kbforge.wizard()</code></pre>
     <p>A form that walks through the same three stages: describe, review the plan, build. <b>Show as code</b> gives you the equivalent Python and YAML, so you can move to a committed config later.</p>
     <figure>
-      <a href="assets/screens/wizard-form.png"><img src="assets/screens/wizard-form.png" alt="The wizard form with name, S3 location, embedding model, dimensions, vector store and chunking fields" loading="lazy" width="2524" height="1050"></a>
+      <a href="assets/screens/wizard-form.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/wizard-form-dark.png"><img src="assets/screens/wizard-form.png" alt="The wizard form with name, S3 location, embedding model, dimensions, vector store and chunking fields" loading="lazy" width="2524" height="1050"></picture></a>
       <figcaption>Fill in a name and location; the defaults are marked "recommended".</figcaption>
     </figure>
     <figure>
-      <a href="assets/screens/wizard-plan.png"><img src="assets/screens/wizard-plan.png" alt="The wizard showing the plan after clicking Review plan, with the Build it button enabled" loading="lazy" width="2524" height="3470"></a>
+      <a href="assets/screens/wizard-plan.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/wizard-plan-dark.png"><img src="assets/screens/wizard-plan.png" alt="The wizard showing the plan after clicking Review plan, with the Build it button enabled" loading="lazy" width="2524" height="3470"></picture></a>
       <figcaption>"Review plan" shows the same plan card. "Build it" only unlocks when nothing is blocked.</figcaption>
     </figure>
     <figure>
-      <a href="assets/screens/wizard-built.png"><img src="assets/screens/wizard-built.png" alt="The wizard after building: progress card, ready card and an Ask box" loading="lazy" width="2524" height="3032"></a>
+      <a href="assets/screens/wizard-built.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/wizard-built-dark.png"><img src="assets/screens/wizard-built.png" alt="The wizard after building: progress card, ready card and an Ask box" loading="lazy" width="2524" height="3030"></picture></a>
       <figcaption>After building, an Ask box lets you try a question straight away.</figcaption>
     </figure>
 
@@ -384,7 +384,7 @@ kbforge models                    <span class="c"># supported embedding models</
     <details><summary>Can I adopt a knowledge base someone created by hand?</summary><p>If you use the same name, kbforge finds it and shows it as <span class="badge" style="--c:var(--muted)">exists</span>, or as <span class="badge" style="--c:var(--red)">blocked</span> if its settings differ. <code>destroy()</code> leaves it alone because it has no kbforge tag.</p></details>
     <details><summary>Where's the state file?</summary><p>There isn't one. Every resource name is derived from the knowledge base name, so kbforge always looks the resources up live in AWS. Two people running the same YAML see the same plan.</p></details>
     <details><summary>Can my application query it without kbforge?</summary><p>Yes. It's a normal Bedrock knowledge base. Use <code>bedrock-agent-runtime</code>'s <code>retrieve</code> or <code>retrieve_and_generate</code> with the knowledge base ID from the "ready" card.</p></details>
-    <details><summary>How were these screenshots made?</summary><p>By running a real JupyterLab against a simulated AWS account (the same fake the test-suite uses), so the IDs are made up and builds finish in seconds. Real builds take a few minutes, mostly for the first sync. Regenerate them with <code>uv run --group docs python scripts/docs_screenshots.py</code>.</p></details>
+    <details><summary>How were these screenshots made?</summary><p>By running a real JupyterLab against a simulated AWS account (the same fake the test-suite uses), so the IDs are made up and builds finish in seconds. Real builds take a few minutes, mostly for the first sync. Each one is taken in JupyterLab's light and dark themes, and this page shows the one matching your system. Regenerate them with <code>uv run --group docs python scripts/docs_screenshots.py</code>.</p></details>
   </main>
 </div>
 
@@ -414,6 +414,17 @@ kbforge models                    <span class="c"># supported embedding models</
     .then((r) => r.text())
     .then((text) => (document.getElementById("policy").textContent = text))
     .catch(() => (document.getElementById("policy").textContent = "Open notebook-role-policy.json next to this page."));
+
+  // Screenshots come in light and dark; make the full-size link open the one being shown.
+  const dark = window.matchMedia("(prefers-color-scheme: dark)");
+  const syncScreenshotLinks = () => {
+    document.querySelectorAll("figure a:has(picture)").forEach((a) => {
+      a.href = a.querySelector("img").currentSrc || a.querySelector("img").src;
+    });
+  };
+  document.querySelectorAll("figure picture img").forEach((img) => img.addEventListener("load", syncScreenshotLinks));
+  dark.addEventListener("change", () => setTimeout(syncScreenshotLinks, 50));
+  syncScreenshotLinks();
 
   // Highlight the current section in the sidebar.
   const links = [...document.querySelectorAll("aside.toc a")];

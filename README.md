@@ -19,7 +19,7 @@
 
 <br>
 
-<img src="docs/assets/screens/jupyterlab.png" alt="A kbforge plan rendered in JupyterLab" width="900">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/jupyterlab-dark.png"><img src="docs/assets/screens/jupyterlab.png" alt="A kbforge plan rendered in JupyterLab" width="900"></picture>
 
 </div>
 
@@ -85,16 +85,16 @@ Resource names are derived from the KB name, so a second run finds what already 
 <td align="center" width="50%"><b>2 · Apply</b>: live progress, step by step</td>
 </tr>
 <tr>
-<td><img src="docs/assets/screens/plan.png" alt="kb.plan() card showing data flow, preflight checks and the resources to be built"></td>
-<td><img src="docs/assets/screens/progress.png" alt="kb.apply() live progress card"></td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/plan-dark.png"><img src="docs/assets/screens/plan.png" alt="kb.plan() card showing data flow, preflight checks and the resources to be built"></picture></td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/progress-dark.png"><img src="docs/assets/screens/progress.png" alt="kb.apply() live progress card"></picture></td>
 </tr>
 <tr>
 <td align="center"><b>3 · Ask</b>: retrieved chunks with scores and sources</td>
 <td align="center"><b>Prefer a form?</b> <code>kbforge.wizard()</code></td>
 </tr>
 <tr>
-<td><img src="docs/assets/screens/ask.png" alt="kb.ask() card showing retrieved chunks"></td>
-<td><img src="docs/assets/screens/wizard-form.png" alt="The kbforge wizard form in JupyterLab"></td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/ask-dark.png"><img src="docs/assets/screens/ask.png" alt="kb.ask() card showing retrieved chunks"></picture></td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/wizard-form-dark.png"><img src="docs/assets/screens/wizard-form.png" alt="The kbforge wizard form in JupyterLab"></picture></td>
 </tr>
 </table>
 
