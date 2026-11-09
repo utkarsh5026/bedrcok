@@ -326,6 +326,15 @@ def docs_screens(args: List[str]) -> int:
     return run("Docs screenshots", "📸", [*cmd, *args], "Run `make install-docs` first.").code
 
 
+@task("docs-video", "🎬", "Docs", "Export the docs tour as docs/assets/kbforge-tour.mp4 (needs ffmpeg)")
+def docs_video(args: List[str]) -> int:
+    """Render the animated tour from the docs site into an MP4 people can share outside the site."""
+    cmd = ["uv", "run", "--group", "docs", "python", "scripts/docs_video.py"]
+    if os.environ.get("CHROMIUM"):
+        cmd += ["--chromium", os.environ["CHROMIUM"]]
+    return run("Docs video", "🎬", [*cmd, *args], "Run `make install-docs` first, and install ffmpeg.").code
+
+
 @task("docs-serve", "🌐", "Docs", "Preview the docs site at http://localhost:8000 (PORT=... to change)")
 def docs_serve(args: List[str]) -> int:
     """Serve ``docs/`` locally so you can check the GitHub Pages site before pushing. Ctrl+C to stop."""

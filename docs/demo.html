@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kbforge · the 90-second tour</title>
+<meta name="description" content="A short animated tour of kbforge: describe a knowledge base, read the plan, build it and ask it a question.">
+<link rel="stylesheet" href="assets/site.css">
+<link rel="stylesheet" href="assets/demo.css">
+<style>
+  /* Full-window version of the tour, handy for presenting or screen-sharing.
+     With ?record the controls are hidden so scripts/docs_video.py can capture clean frames. */
+  body { background: #0b1017; color: #e8eef6; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .player { width: min(100vw - 32px, (100vh - 150px) * 16 / 9); margin: 0; }
+  .player .note a { color: #98a3b3; }
+  html.record body { display: block; }
+  html.record .player { width: 100vw; max-width: none; }
+  html.record .screen { border: 0; border-radius: 0; box-shadow: none; }
+  html.record .controls, html.record .chapters, html.record .note { display: none; }
+</style>
+<script>if (/[?&]record\b/.test(location.search)) document.documentElement.classList.add("record");</script>
+</head>
+<body>
+  <div class="player">
+    <div class="screen" data-demo="autoplay"></div>
+    <div class="controls"></div>
+    <div class="chapters"></div>
+    <p class="note"><a href="./">&larr; Back to the guide</a> · <a href="assets/kbforge-tour.mp4" data-tour-mp4 download>Download as MP4</a></p>
+  </div>
+<script src="assets/demo.js" defer></script>
+</body>
+</html>

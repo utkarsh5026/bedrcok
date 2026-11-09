@@ -1,0 +1,61 @@
+/* Styles for the animated tour drawn by demo.js. The stage is a fixed 1280×720 canvas that is
+   scaled to fit its container, so these sizes are in "video pixels", not page pixels. The
+   stage always looks like JupyterLab's light theme, whatever the page theme is. */
+
+.stage { position: absolute; left: 0; top: 0; width: 1280px; height: 720px; transform-origin: 0 0; overflow: hidden; background: #0f1520; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Arial, sans-serif; color: #1f2328; user-select: none; }
+.stage > * { position: absolute; inset: 0; }
+
+.stage .window { background: #ffffff; }
+.stage .chrome { position: absolute; left: 0; right: 0; top: 0; height: 40px; display: flex; align-items: center; gap: 16px; padding: 0 18px; background: #eef1f5; border-bottom: 1px solid #d9dee5; font-size: 14px; color: #4b5563; }
+.stage .dots { display: flex; gap: 7px; }
+.stage .dots i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+.stage .dots i:nth-child(2) { background: #febc2e; }
+.stage .dots i:nth-child(3) { background: #28c840; }
+.stage .tab { background: #ffffff; padding: 6px 14px; border-radius: 8px; border: 1px solid #d9dee5; font-weight: 500; }
+.stage .chip { margin-left: auto; font: 600 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #4b5563; }
+
+.stage .nb { position: absolute; top: 40px; left: 0; right: 0; padding: 24px 40px 0 0; }
+.stage .cellrow { position: relative; display: flex; }
+.stage .cellrow::before { content: ""; position: absolute; left: 8px; top: 0; bottom: 0; width: 4px; border-radius: 2px; background: #2f6fd6; }
+.stage .prompt { width: 90px; flex: none; padding: 12px 14px 0 0; text-align: right; font: 15px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #8a94a3; }
+.stage .running .prompt { color: #2563eb; }
+.stage .code { flex: 1; min-width: 0; padding: 10px 16px; border: 1px solid #dfe3e8; border-radius: 8px; background: #f6f8fa; font: 17px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; color: #1f2328; }
+.stage .code .kw { color: #7c3aed; font-weight: 600; }
+.stage .code .st { color: #0a7d32; }
+.stage .code .cm { color: #8a94a3; font-style: italic; }
+.stage .code .fn { color: #1d4ed8; }
+.stage .caret { display: inline-block; width: 2px; height: 1.15em; margin-left: 1px; vertical-align: text-bottom; background: #1f2328; }
+
+.stage .out { position: absolute; left: 90px; right: 40px; bottom: 0; top: 140px; overflow: hidden; }
+.stage .out > * { position: absolute; left: 0; top: 0; width: 100%; }
+.stage .out img { max-width: none; }
+.stage .textout { font: 17px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 4px 16px; color: #374151; }
+.stage .textout .ok { color: #15803d; font-weight: 700; }
+
+.stage .caption { position: absolute; left: 50%; top: auto; bottom: 22px; transform: translateX(-50%); width: max-content; max-width: 1080px; padding: 12px 24px; border-radius: 4px; background: rgba(22, 22, 21, .92); color: #f3f6fb; font-size: 23px; line-height: 1.4; font-weight: 500; text-align: center; }
+.stage .caption b { color: #ffb889; font-weight: 600; }
+
+.stage .titlecard { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: 0 110px; color: #ecebe7; background: #161615; }
+.stage .titlecard .mark { font: 700 26px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #f08a4b; margin-bottom: 28px; }
+.stage .titlecard h1 { font-size: 64px; letter-spacing: -.03em; margin: 0 0 18px; line-height: 1.05; font-weight: 700; }
+.stage .titlecard p { font-size: 28px; line-height: 1.45; color: #a3a09a; margin: 0; }
+.stage .titlecard ol { list-style: none; padding: 0; margin: 36px 0 0; display: flex; gap: 48px; font: 24px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #ecebe7; }
+.stage .titlecard ol span { color: #f08a4b; margin-right: 10px; }
+.stage .titlecard .small { font: 20px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin-top: 40px; color: #7d7a74; }
+
+/* Dark theme: the same frame in JupyterLab Dark's colours, used with the -dark screenshots. */
+.stage.dark .window { background: #111111; }
+.stage.dark .chrome { background: #1c1c1c; border-bottom-color: #2c2c2c; color: #a3a3a3; }
+.stage.dark .tab { background: #111111; border-color: #2c2c2c; }
+.stage.dark .chip { color: #a3a3a3; }
+.stage.dark .code { background: #1c1c1c; border-color: #333333; color: #e6e6e6; }
+.stage.dark .code .kw { color: #c4a5ff; }
+.stage.dark .code .st { color: #7cc28a; }
+.stage.dark .code .cm { color: #8a8a8a; }
+.stage.dark .code .fn { color: #8fb3f2; }
+.stage.dark .caret { background: #e6e6e6; }
+.stage.dark .prompt { color: #7a7a7a; }
+.stage.dark .textout { color: #d4d4d4; }
+.stage.dark .textout .ok { color: #7cc28a; }
+.stage.dark .caption { background: rgba(250, 250, 248, .94); color: #1b1b1a; }
+.stage.dark .caption b { color: #b4410e; }
