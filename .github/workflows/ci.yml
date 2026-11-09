@@ -1,0 +1,124 @@
+# Continuous integration: runs on every pull request and every push to main.
+#
+# Everything here runs against tests/fake_aws.py, so no AWS credentials are
+# needed (or available) in CI. The release workflow calls this file too, so a
+# tag can only be released if the same checks pass.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+# A new push to the same PR cancels the run that's still going; pushes to main
+# always finish so every commit on main has a result.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  FORCE_COLOR: "1"
+  UV_LOCKED: "1"  # fail if uv.lock is out of date instead of silently re-locking
+
+jobs:
+  lint:
+    name: Lint & type-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          enable-cache: true
+      - name: Install
+        run: uv sync --all-extras
+      - name: Ruff (lint)
+        run: uv run ruff check --output-format=github src tests scripts
+      - name: Ruff (format)
+        run: uv run ruff format --check src tests scripts
+      - name: Mypy
+        run: uv run mypy
+
+  test:
+    name: Tests (Python ${{ matrix.python }}${{ matrix.resolution == 'lowest-direct' && ', oldest deps' || '' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        resolution: [locked]
+        include:
+          # The oldest versions pyproject.toml allows (e.g. boto3>=1.40.0), so
+          # the lower bounds we promise users are actually tested.
+          - python: "3.10"
+            resolution: lowest-direct
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+          cache-suffix: ${{ matrix.resolution }}
+      - name: Install (from uv.lock)
+        if: matrix.resolution == 'locked'
+        run: uv sync --all-extras
+      - name: Install (oldest allowed versions)
+        if: matrix.resolution == 'lowest-direct'
+        env:
+          UV_LOCKED: "0"
+        run: uv sync --all-extras --resolution lowest-direct
+      - name: Pytest
+        run: uv run --no-sync pytest
+
+  build:
+    name: Build & smoke-test package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+      - name: Build sdist and wheel
+        run: uv build
+      - name: Check package metadata
+        run: uvx twine check --strict dist/*
+      # Install the wheel into a clean environment (not the repo checkout) to
+      # catch files missing from the package or a broken console script.
+      - name: Install wheel and run the CLI
+        run: |
+          uv venv /tmp/smoke
+          uv pip install --python /tmp/smoke/bin/python "$(ls dist/*.whl)[all]"
+          cd /tmp
+          /tmp/smoke/bin/python -c "import kbforge; print('imported kbforge from', kbforge.__file__)"
+          /tmp/smoke/bin/kbforge --help
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # One stable check name to mark as "required" in branch protection, so the
+  # Python matrix can change without editing the repository settings.
+  ci-ok:
+    name: CI passed
+    if: always()
+    needs: [lint, test, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Fail if any job failed or was cancelled
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - run: echo "All CI jobs passed."

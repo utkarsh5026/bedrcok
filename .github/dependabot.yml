@@ -1,0 +1,49 @@
+# Dependabot opens pull requests when our dependencies have new versions.
+# Each PR runs through CI, so a bump that breaks the tests shows up red.
+#
+# Updates are grouped to keep the PR count low: one weekly PR for the Python
+# lockfile (minor and patch bumps) and one for GitHub Actions. Major version
+# bumps get their own PR, because they're the ones that may need code changes.
+# Security fixes are raised as soon as they're published, not weekly.
+#
+# The cooldown makes Dependabot wait a few days before proposing a brand-new
+# release. Most compromised or broken releases are yanked within that window,
+# so we don't pull them in on day one. Security updates skip the cooldown.
+version: 2
+
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    commit-message:
+      prefix: deps
+    groups:
+      python-dependencies:
+        applies-to: version-updates
+        update-types: [minor, patch]
+      python-security:
+        applies-to: security-updates
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Etc/UTC
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns: ["*"]

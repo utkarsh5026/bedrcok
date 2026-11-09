@@ -4,6 +4,7 @@
 
 **From documents in S3 to an Amazon Bedrock Knowledge Base in four notebook cells,<br>with a plan you can read before anything is created.**
 
+[![CI](https://github.com/utkarsh5026/bedrcok/actions/workflows/ci.yml/badge.svg)](https://github.com/utkarsh5026/bedrcok/actions/workflows/ci.yml)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Amazon Bedrock](https://img.shields.io/badge/Amazon%20Bedrock-Knowledge%20Bases-FF9900?logo=amazonwebservices&logoColor=white)](https://aws.amazon.com/bedrock/knowledge-bases/)
 [![Jupyter](https://img.shields.io/badge/Jupyter%20%C2%B7%20SageMaker-ready-F37626?logo=jupyter&logoColor=white)](notebooks/getting_started.ipynb)
@@ -18,7 +19,7 @@
 
 <br>
 
-<img src="docs/assets/screens/jupyterlab.png" alt="A kbforge plan rendered in JupyterLab" width="900">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/jupyterlab-dark.png"><img src="docs/assets/screens/jupyterlab.png" alt="A kbforge plan rendered in JupyterLab" width="900"></picture>
 
 </div>
 
@@ -84,16 +85,16 @@ Resource names are derived from the KB name, so a second run finds what already 
 <td align="center" width="50%"><b>2 · Apply</b>: live progress, step by step</td>
 </tr>
 <tr>
-<td><img src="docs/assets/screens/plan.png" alt="kb.plan() card showing data flow, preflight checks and the resources to be built"></td>
-<td><img src="docs/assets/screens/progress.png" alt="kb.apply() live progress card"></td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/plan-dark.png"><img src="docs/assets/screens/plan.png" alt="kb.plan() card showing data flow, preflight checks and the resources to be built"></picture></td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/progress-dark.png"><img src="docs/assets/screens/progress.png" alt="kb.apply() live progress card"></picture></td>
 </tr>
 <tr>
 <td align="center"><b>3 · Ask</b>: retrieved chunks with scores and sources</td>
 <td align="center"><b>Prefer a form?</b> <code>kbforge.wizard()</code></td>
 </tr>
 <tr>
-<td><img src="docs/assets/screens/ask.png" alt="kb.ask() card showing retrieved chunks"></td>
-<td><img src="docs/assets/screens/wizard-form.png" alt="The kbforge wizard form in JupyterLab"></td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/ask-dark.png"><img src="docs/assets/screens/ask.png" alt="kb.ask() card showing retrieved chunks"></picture></td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/wizard-form-dark.png"><img src="docs/assets/screens/wizard-form.png" alt="The kbforge wizard form in JupyterLab"></picture></td>
 </tr>
 </table>
 
@@ -165,11 +166,31 @@ Every AWS resource is a step that is first **inspected** (never changed) and the
 ```bash
 uv sync --all-extras          # package + dev tools
 uv run pytest                 # tests run against an in-memory fake AWS, no account needed
-uv run ruff check src tests && uv run mypy
+uv run ruff check src tests scripts && uv run ruff format --check src tests scripts && uv run mypy
 
 # regenerate the screenshots in docs/ (runs a real JupyterLab with Playwright)
 uv run --group docs python scripts/docs_screenshots.py
 ```
+
+**CI/CD** lives in [`.github/workflows`](.github/workflows):
+
+| Workflow | Runs on | What it does |
+|---|---|---|
+| [CI](.github/workflows/ci.yml) | every PR and push to `main` | ruff, mypy, tests on Python 3.10–3.14 (plus the oldest allowed dependency versions), and builds the wheel and runs `kbforge --help` from it |
+| [Pages](.github/workflows/pages.yml) | pushes to `main` that change `docs/` | deploys the [guide](https://utkarsh5026.github.io/bedrcok/) |
+| [Release](.github/workflows/release.yml) | pushing a `v*` tag | reruns CI, checks the tag matches `pyproject.toml`, and publishes a GitHub Release with the wheel and sdist attached |
+
+[Dependabot](.github/dependabot.yml) opens weekly grouped PRs for `uv.lock` and the GitHub Actions.
+
+To cut a release:
+
+```bash
+uv version --bump minor                 # or patch / major
+git commit -am "Release v$(uv version --short)" && git push
+git tag "v$(uv version --short)" && git push origin "v$(uv version --short)"
+```
+
+Then install a pinned version with `pip install "kbforge[notebook] @ git+https://github.com/utkarsh5026/bedrcok.git@v0.2.0"`.
 
 See [CLAUDE.md](CLAUDE.md) for how the code is organised.
 

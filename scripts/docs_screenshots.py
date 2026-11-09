@@ -5,15 +5,23 @@ How it works:
 1. Writes a demo notebook to a temporary folder. Its first (hidden) cell swaps AWS for the
    in-memory fake from ``tests/fake_aws.py``, so no AWS account is needed and the output is
    the same every time.
-2. Starts a real JupyterLab (the same UI SageMaker Studio uses) with clean settings.
+2. Starts a real JupyterLab (the same UI SageMaker Studio uses) with clean settings, once
+   with the light theme and once with the dark one.
 3. Uses Playwright to run every cell, fill in the wizard, and screenshot each cell into
-   ``docs/assets/screens/``.
+   ``docs/assets/screens/``. Dark-theme shots get a ``-dark`` suffix (``plan-dark.png``), and
+   the guide and README show them to readers whose system is in dark mode.
 4. Renders the CLI's coloured output into a terminal-style screenshot.
+
+The ``docs`` dependency group brings in Playwright, but Playwright downloads its browser
+separately, and each Playwright version needs its own Chromium build. So unless you pass
+``--chromium``, the script first runs ``playwright install chromium``. That does nothing if the
+right build is already in ``~/.cache/ms-playwright``.
 
 Usage:
 
     uv run --group docs python scripts/docs_screenshots.py
-    uv run --group docs python scripts/docs_screenshots.py --chromium /path/to/chrome
+    uv run --group docs python scripts/docs_screenshots.py --chromium /path/to/chrome   # use your own browser
+    uv run --group docs python scripts/docs_screenshots.py --theme dark   # just one theme
 """
 
 from __future__ import annotations
@@ -38,6 +46,9 @@ from playwright.sync_api import Page, sync_playwright
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "docs" / "assets" / "screens"
+
+#: JupyterLab theme name and file-name suffix for each look we screenshot.
+THEMES = {"light": ("JupyterLab Light", ""), "dark": ("JupyterLab Dark", "-dark")}
 
 SETUP = f"""
 # Hidden setup: replace AWS with the in-memory fake used by the test-suite.
@@ -136,20 +147,26 @@ SETUP += "\nfake.services['bedrock-agent-runtime'].retrieve = lambda **kw: {'ret
 CELLS[0] = (None, SETUP)
 
 
+def ensure_browser() -> None:
+    """Download the Chromium build this Playwright version expects, if it isn't cached yet."""
+    print("Checking Playwright's Chromium (downloads once, ~150 MB)…")
+    subprocess.run([sys.executable, "-m", "playwright", "install", "chromium"], check=True)
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
 
 
-def write_lab_settings(settings_dir: Path) -> None:
-    """Quiet, light, non-virtualised JupyterLab so every cell is rendered for screenshots."""
+def write_lab_settings(settings_dir: Path, theme: str) -> None:
+    """Quiet, non-virtualised JupyterLab in the given theme, so every cell is rendered for screenshots."""
     files = {
         "@jupyterlab/apputils-extension/notification.jupyterlab-settings": {
             "fetchNews": "false",
             "checkForUpdates": False,
         },
-        "@jupyterlab/apputils-extension/themes.jupyterlab-settings": {"theme": "JupyterLab Light"},
+        "@jupyterlab/apputils-extension/themes.jupyterlab-settings": {"theme": theme},
         "@jupyterlab/notebook-extension/tracker.jupyterlab-settings": {"windowingMode": "none"},
     }
     for rel, content in files.items():
@@ -168,14 +185,15 @@ def build_notebook(folder: Path) -> Path:
 
 
 @contextlib.contextmanager
-def jupyter_lab(folder: Path) -> Generator[str, None, None]:
+def jupyter_lab(folder: Path, theme: str) -> Generator[str, None, None]:
+    """Run JupyterLab in the given theme on a free port and yield its URL; stops it afterwards."""
     port = free_port()
     env = {
         **os.environ,
         "JUPYTERLAB_SETTINGS_DIR": str(folder / "settings"),
         "JUPYTERLAB_WORKSPACES_DIR": str(folder / "workspaces"),
     }
-    write_lab_settings(folder / "settings")
+    write_lab_settings(folder / "settings", theme)
     proc = subprocess.Popen(
         [
             sys.executable,
@@ -214,6 +232,7 @@ def cell(page: Page, index: int):  # type: ignore[no-untyped-def]
 
 
 def shoot(page: Page, index: int, name: str, output_only: bool = False) -> None:
+    """Screenshot one cell (or just its output) to ``docs/assets/screens/<name>.png``."""
     target = cell(page, index)
     if output_only:
         target = target.locator(".jp-OutputArea-output").first
@@ -251,7 +270,8 @@ def wait_until_executed(page: Page, count: int) -> None:
     )
 
 
-def notebook_screens(url: str, chromium: Optional[str]) -> None:
+def notebook_screens(url: str, chromium: Optional[str], suffix: str = "") -> None:
+    """Run the demo notebook and save every screenshot, adding ``suffix`` to each file name."""
     with sync_playwright() as p:
         browser = p.chromium.launch(executable_path=chromium) if chromium else p.chromium.launch()
         page = browser.new_page(viewport={"width": 1360, "height": 3000}, device_scale_factor=2)
@@ -269,14 +289,14 @@ def notebook_screens(url: str, chromium: Optional[str]) -> None:
 
         for index, (name, _) in enumerate(CELLS):
             if name and name != "wizard":
-                shoot(page, index, name, output_only=(name == "progress"))
+                shoot(page, index, name + suffix, output_only=(name == "progress"))
 
         page.set_viewport_size({"width": 1360, "height": 900})
         plan_cell = cell(page, [name for name, _ in CELLS].index("plan"))
         plan_cell.evaluate("el => el.scrollIntoView({block: 'start'})")
         page.wait_for_timeout(400)
-        page.screenshot(path=str(OUT / "jupyterlab.png"))
-        print("  saved jupyterlab.png")
+        page.screenshot(path=str(OUT / f"jupyterlab{suffix}.png"))
+        print(f"  saved jupyterlab{suffix}.png")
         page.set_viewport_size({"width": 1360, "height": 3000})
 
         wizard_index = len(CELLS) - 1
@@ -284,13 +304,13 @@ def notebook_screens(url: str, chromium: Optional[str]) -> None:
         wizard.locator("input[placeholder='hr-policies']").fill("benefits-faq")
         wizard.locator("input[placeholder='s3://my-bucket/folder/']").fill("s3://my-company-docs/hr/")
         page.keyboard.press("Tab")
-        shoot(page, wizard_index, "wizard-form")
+        shoot(page, wizard_index, "wizard-form" + suffix)
         wizard.get_by_role("button", name="Review plan").click()
         wizard.get_by_text("Ready.", exact=False).wait_for(timeout=30_000)
-        shoot(page, wizard_index, "wizard-plan")
+        shoot(page, wizard_index, "wizard-plan" + suffix)
         wizard.get_by_role("button", name="Build it").click()
         wizard.locator(".badge", has_text="ready").wait_for(timeout=30_000)
-        shoot(page, wizard_index, "wizard-built")
+        shoot(page, wizard_index, "wizard-built" + suffix)
         browser.close()
 
 
@@ -346,15 +366,23 @@ def cli_screen(chromium: Optional[str]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Regenerate the GitHub Pages screenshots.")
     parser.add_argument("--chromium", help="path to a Chromium binary (default: Playwright's own)")
+    parser.add_argument("--theme", choices=[*THEMES, "both"], default="both", help="which notebook theme to shoot")
     args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
+    if not args.chromium:
+        ensure_browser()
 
+    themes = list(THEMES) if args.theme == "both" else [args.theme]
     with tempfile.TemporaryDirectory() as tmp:
-        folder = Path(tmp)
-        build_notebook(folder)
-        print("Running the demo notebook in JupyterLab…")
-        with jupyter_lab(folder) as url:
-            notebook_screens(url, args.chromium)
+        for key in themes:
+            lab_theme, suffix = THEMES[key]
+            # A fresh folder per theme, so the second run can't see outputs the first one saved.
+            folder = Path(tmp) / key
+            folder.mkdir()
+            build_notebook(folder)
+            print(f"Running the demo notebook in {lab_theme}…")
+            with jupyter_lab(folder, lab_theme) as url:
+                notebook_screens(url, args.chromium, suffix)
     print("Rendering the CLI screenshot…")
     cli_screen(args.chromium)
 
