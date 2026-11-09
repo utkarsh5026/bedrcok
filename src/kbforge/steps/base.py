@@ -254,7 +254,8 @@ def explain_error(exc: BaseException) -> str:
     if code in BAD_CREDENTIALS:
         return (
             f"AWS didn't accept your credentials ({msg.rstrip('.')}).\n\n"
-            "Check that this notebook or terminal is signed in to the right AWS account (`aws sts get-caller-identity` shows who you are), then try again."
+            "Check that this notebook or terminal is signed in to the right AWS account "
+            "(`aws sts get-caller-identity` shows who you are), then try again."
         )
     if code in THROTTLED:
         return f"{msg}\n\nAWS is busy right now. Wait a minute and run the same command again."
