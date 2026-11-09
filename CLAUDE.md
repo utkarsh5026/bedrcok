@@ -18,13 +18,15 @@ The same tasks are wrapped by `make` (see `make help`): `make check` runs lint, 
 ## Layout
 
 - `src/kbforge/spec.py`: `KBSpec` (what the user wants), `S3Source`/`WebSource`, `Parsing`, `Chunking`, and `Names` (every AWS name, derived deterministically from the KB name; this is why there's no state file).
-- `src/kbforge/models.py`: catalogues of embedding models (alias → model id, dimensions) and parsing models (alias → model id, called through the region's cross-region inference profile).
+- `src/kbforge/models.py`: catalogues of embedding models (alias → model id, dimensions), parsing models and answer models (alias → model id, called through the region's cross-region inference profile).
 - `src/kbforge/parsers.py`: `list_parsing_models()` asks Bedrock which vision models in the region can parse documents (`kbforge.parsing_models()`, `kbforge parsers`), falling back to the catalogue when listing isn't allowed.
+- `src/kbforge/errors.py`: `KBForgeError` (shown in IPython as just its message, no traceback) and `did_you_mean()` for typo hints in validation errors.
 - `src/kbforge/aws.py`: `Aws` wrapper (cached clients, identity, SageMaker assumed-role → role ARN), plus `wait_for` and `retry_on` for eventual consistency.
 - `src/kbforge/checks.py`: preflight checks (credentials, model invoke, S3 scan, vector store, user-supplied role). A `fail` blocks apply.
 - `src/kbforge/steps/`: one `Step` per AWS resource. `base.py` defines `Step`/`Action`/`Inspection`/`Ctx`; `iam.py`, `s3_vectors.py`, `opensearch.py` and `bedrock.py` implement them; `build_steps()` sets the order.
 - `src/kbforge/plan.py`: `make_plan()` (checks + `inspect()` every step, read-only) and `Plan.apply()` (re-inspects each step just before acting, so re-runs resume).
-- `src/kbforge/knowledge_base.py`: `KnowledgeBase`, the user-facing facade (`plan/apply/sync/ask/status/destroy`), plus `Answers` and `Status`.
+- `src/kbforge/knowledge_base.py`: `KnowledgeBase`, the user-facing facade (`plan/apply/sync/ask/status/destroy`, `open`), plus `Answers` (retrieved chunks, and with `ask(answer=True)` a written answer from `retrieve_and_generate` with citations).
+- `src/kbforge/deployed.py`: reads what's already in AWS: `Status`, `kbforge.knowledge_bases()` (every KB tagged `managed-by: kbforge`) and `open_spec()`, the reverse of the steps' API calls, which rebuilds a `KBSpec` for `KnowledgeBase.open(name)`. When a step changes what it sends to Bedrock, update the matching `*_from_api` here; `tests/test_deployed.py` round-trips specs to catch drift.
 - `src/kbforge/ui/`: `theme.py` (scoped CSS using JupyterLab variables, so it follows light/dark), `html.py` (cards via `_repr_html_`), `text.py` (CLI output), `progress.py` (live-updating display; `progress_target` redirects it for the wizard), `wizard_style.py` (the wizard's stylesheet, scoped to `.kbf-wiz`, plus its HTML pieces: stepper, option cards, live preview) and `choices.py` (`OptionCards`, the clickable-card replacement for dropdowns).
 - `src/kbforge/wizard.py` (ipywidgets form), `guide.py` (getting-started card), `cli.py` (`kbforge` command).
 - `tests/fake_aws.py`: in-memory fake of every service used, including OpenSearch Serverless and the OpenSearch index client (`Aws.opensearch()`). Add any new boto3 call here as well.
@@ -42,7 +44,7 @@ Different KB names can share AWS names (`HR_Policies` and `hr-policies` both slu
 - Every module, class and public function gets a **plain-English docstring** a newcomer can follow: say what it's for and why, not just what it does.
 - **No banner/divider comments** (`# ---- section ----`, `# ====`). Organise with files and classes instead. Short inline comments that explain *why* are fine.
 - Prefer clear names over cleverness; keep `typing.Optional`/`List` style (ruff UP006/UP007 are ignored on purpose).
-- User-facing messages say what to do next ("Run kb.apply() again — finished steps are skipped"), not just what went wrong. AWS errors go through `explain_error()`.
+- User-facing messages say what to do next ("Run kb.apply() again — finished steps are skipped"), not just what went wrong. AWS errors go through `explain_error()`; notebook methods that call AWS directly wrap it in `friendly_aws_errors()`, and the CLI's `main()` catches botocore errors the same way.
 - All HTML output must escape user/AWS content with `esc()` and live inside `card()` so styles stay scoped to `.kbf`.
 
 ## Gotchas

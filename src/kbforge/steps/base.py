@@ -38,6 +38,23 @@ KB_TAG = "kbforge-kb"
 #: Error codes that mean "you're not allowed to look", as opposed to "it isn't there".
 ACCESS_DENIED = ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation")
 
+#: Error codes that mean the notebook's AWS session has run out and needs refreshing.
+EXPIRED_CREDENTIALS = ("ExpiredToken", "ExpiredTokenException", "RequestExpired", "TokenRefreshRequired")
+
+#: Error codes (and botocore exception names) that mean there are no usable AWS credentials at all.
+BAD_CREDENTIALS = (
+    "UnrecognizedClientException",
+    "InvalidClientTokenId",
+    "InvalidSignatureException",
+    "SignatureDoesNotMatch",
+    "NoCredentialsError",
+    "PartialCredentialsError",
+    "CredentialRetrievalError",
+)
+
+#: Error codes that mean "AWS is busy, slow down"; botocore already retried before we see these.
+THROTTLED = ("ThrottlingException", "TooManyRequestsException", "Throttling", "RequestLimitExceeded")
+
 
 class Action(str, Enum):
     """What a step is going to do (or did). Shown as a coloured badge in the plan."""
@@ -229,4 +246,29 @@ def explain_error(exc: BaseException) -> str:
         )
     if code == "ServiceQuotaExceededException":
         return f"{msg}\n\nYou've hit an account quota. Delete unused resources or request a quota increase."
+    if code in EXPIRED_CREDENTIALS:
+        return (
+            "Your AWS session has expired. Refresh your credentials (in SageMaker, restart the kernel; "
+            "elsewhere, log in again, e.g. `aws sso login`), then run the same command again."
+        )
+    if code in BAD_CREDENTIALS:
+        return (
+            f"AWS didn't accept your credentials ({msg.rstrip('.')}).\n\n"
+            "Check that this notebook or terminal is signed in to the right AWS account "
+            "(`aws sts get-caller-identity` shows who you are), then try again."
+        )
+    if code in THROTTLED:
+        return f"{msg}\n\nAWS is busy right now. Wait a minute and run the same command again."
+    if code == "NoRegionError":
+        return "No AWS region configured. Pass region='us-east-1' (or set AWS_DEFAULT_REGION)."
+    if code in ("EndpointConnectionError", "ConnectTimeoutError", "ConnectionClosedError"):
+        return (
+            f"Couldn't reach AWS ({msg}).\n\nCheck the region name is right (e.g. 'us-east-1') and that "
+            "this machine has internet access, then try again."
+        )
+    if code == "ResourceNotFoundException" and "model" in msg.lower():
+        return (
+            f"{msg}\n\nThe model isn't available to your account in this region. Turn it on in the Bedrock "
+            "console under Model access, or pick another model."
+        )
     return f"{code}: {msg}" if code and code not in msg else msg

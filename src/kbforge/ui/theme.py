@@ -101,6 +101,8 @@ body[data-jp-theme-light="false"] .kbf, body.vscode-dark .kbf, body.vscode-high-
 .kbf .score { display: inline-block; width: 60px; height: 6px; border-radius: 3px; background: var(--kbf-soft); vertical-align: middle; overflow: hidden; }
 .kbf .score i { display: block; height: 100%; background: var(--kbf-blue); }
 .kbf .snippet { margin-top: 4px; white-space: pre-wrap; }
+.kbf .answer { font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+.kbf .cite { font-size: 10.5px; font-weight: 600; color: var(--kbf-blue); margin-left: 1px; }
 .kbf a { color: var(--kbf-blue); }
 .kbf .tbl { width: 100%; overflow-x: auto; }
 .kbf .tbl table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
@@ -108,6 +110,10 @@ body[data-jp-theme-light="false"] .kbf, body.vscode-dark .kbf, body.vscode-high-
   font-weight: 600; padding: 0 12px 6px 0; border-bottom: 1px solid var(--kbf-border); }
 .kbf .tbl td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--kbf-border); vertical-align: top; }
 .kbf .tbl tr:last-child td { border-bottom: 0; }
+.kbf .tbl td.nw { white-space: nowrap; }
+/* JupyterLab right-aligns and stripes notebook tables; these selectors outrank its rules. */
+.kbf .tbl table th, .kbf .tbl table td { text-align: left; }
+.kbf .tbl tbody tr:nth-child(n) { background: transparent; }
 @media (max-width: 640px) { .kbf .arrow { display: none; } .kbf .stage { flex-basis: 100%; margin-bottom: 6px; } }
 </style>
 """

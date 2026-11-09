@@ -73,6 +73,20 @@ def _realistic_job(**kw):
     return {{"ingestionJob": job}}
 agent.start_ingestion_job = _realistic_job
 kbforge.knowledge_base.Aws = lambda region=None, session=None: fake
+kbforge.aws.Aws = lambda region=None, session=None: fake  # for kbforge.knowledge_bases()
+
+# Two knowledge bases a colleague built earlier, so kbforge.knowledge_bases() has a few rows.
+from IPython.utils.capture import capture_output
+from kbforge import Chunking, KnowledgeBase, WebSource
+fake.services["s3"].buckets["my-company-docs"].update(
+    {{f"it/runbooks/runbook-{{i:02d}}.md": 14_000 for i in range(40)}}
+)
+with capture_output():
+    for _earlier in (
+        KnowledgeBase("it-runbooks", source="s3://my-company-docs/it/", chunking=Chunking.semantic()),
+        KnowledgeBase("engineering-wiki", source=WebSource(["https://wiki.example.com"]), vector_store="opensearch"),
+    ):
+        _earlier.apply()
 """
 
 #: (screenshot name or None, cell source). Names become docs/assets/screens/<name>.png.
@@ -111,9 +125,13 @@ CELLS = [
     ),
     ("apply", "kb.apply()"),
     ("ask", 'kb.ask("How many weeks of parental leave do we get?")'),
+    ("answer", 'kb.ask("How many weeks of parental leave do we get?", answer=True)'),
     ("status", "kb.status()"),
+    ("list", "kbforge.knowledge_bases()"),
     ("destroy", "kb.destroy()"),
     ("wizard", 'kbforge.wizard(region="us-east-1")'),
+    # Last, because an error stops "Run All Cells": a mistyped name, as a colleague sees it.
+    ("error", 'kb = KnowledgeBase.open("hr-policy")'),
 ]
 
 ASK_RESULTS = [
@@ -144,6 +162,42 @@ SETUP += "\nfake.services['bedrock-agent-runtime'].retrieve = lambda **kw: {'ret
     {"content": {"text": text}, "location": {"type": "S3", "s3Location": {"uri": uri}}, "score": score}
     for score, uri, text in ASK_RESULTS
 ]
+
+#: The written answer the fake returns for ``kb.ask(..., answer=True)``, as (sentence, cited ASK_RESULTS).
+ANSWER = [
+    ("Employees get 26 weeks of fully paid parental leave, which can start up to four weeks before the due date.", [0]),
+    (
+        " You can take it in up to three blocks within 18 months of the birth or adoption; tell your manager "
+        "and People Ops at least 8 weeks before each block starts.",
+        [0, 2],
+    ),
+]
+
+
+def _generate_response() -> dict:
+    """A ``retrieve_and_generate`` response built from ``ANSWER`` and ``ASK_RESULTS``."""
+    text, citations = "", []
+    for sentence, cited in ANSWER:
+        start = len(text)
+        text += sentence
+        citations.append(
+            {
+                "generatedResponsePart": {
+                    "textResponsePart": {"text": sentence, "span": {"start": start, "end": len(text) - 1}}
+                },
+                "retrievedReferences": [
+                    {
+                        "content": {"text": ASK_RESULTS[i][2]},
+                        "location": {"type": "S3", "s3Location": {"uri": ASK_RESULTS[i][1]}},
+                    }
+                    for i in cited
+                ],
+            }
+        )
+    return {"output": {"text": text}, "citations": citations}
+
+
+SETUP += f"\nfake.services['bedrock-agent-runtime'].retrieve_and_generate = lambda **kw: {_generate_response()!r}\n"
 CELLS[0] = (None, SETUP)
 
 
@@ -288,8 +342,13 @@ def notebook_screens(url: str, chromium: Optional[str], suffix: str = "") -> Non
         page.wait_for_timeout(1500)
 
         for index, (name, _) in enumerate(CELLS):
-            if name and name != "wizard":
+            if name and name not in ("wizard", "error"):
                 shoot(page, index, name + suffix, output_only=(name == "progress"))
+        # Select another cell first, so the error cell is shot without JupyterLab's toolbar and focus bar.
+        cell(page, 1).locator(".jp-InputPrompt").click()
+        page.keyboard.press("Escape")
+        error_index = [name for name, _ in CELLS].index("error")
+        shoot(page, error_index, "error" + suffix)
 
         page.set_viewport_size({"width": 1360, "height": 900})
         plan_cell = cell(page, [name for name, _ in CELLS].index("plan"))
@@ -299,7 +358,7 @@ def notebook_screens(url: str, chromium: Optional[str], suffix: str = "") -> Non
         print(f"  saved jupyterlab{suffix}.png")
         page.set_viewport_size({"width": 1360, "height": 3000})
 
-        wizard_index = len(CELLS) - 1
+        wizard_index = [name for name, _ in CELLS].index("wizard")
         wizard = cell(page, wizard_index)
         wizard.locator("input[placeholder='hr-policies']").fill("benefits-faq")
         wizard.locator("input[placeholder='s3://my-bucket/folder/']").fill("s3://my-company-docs/hr/")

@@ -20,6 +20,8 @@ import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
 
+from .errors import KBForgeError
+
 _CLIENT_CONFIG = Config(retries={"max_attempts": 8, "mode": "adaptive"}, user_agent_extra="kbforge")
 
 
@@ -44,7 +46,7 @@ class Aws:
         self.session = session or boto3.Session(region_name=region)
         self.region: str = region or self.session.region_name or ""
         if not self.region:
-            raise RuntimeError("No AWS region configured. Pass region='us-east-1' (or set AWS_DEFAULT_REGION).")
+            raise KBForgeError("No AWS region configured. Pass region='us-east-1' (or set AWS_DEFAULT_REGION).")
         self._clients: Dict[str, Any] = {}
         self._identity: Optional[Dict[str, str]] = None
         self._principal_arn: Optional[str] = None
@@ -104,7 +106,7 @@ class Aws:
         try:
             from opensearchpy import AWSV4SignerAuth, OpenSearch, RequestsHttpConnection
         except ImportError as exc:
-            raise RuntimeError(
+            raise KBForgeError(
                 "OpenSearch Serverless needs: pip install 'kbforge[opensearch]', then restart the kernel."
             ) from exc
         auth = AWSV4SignerAuth(self.session.get_credentials(), self.region, "aoss")

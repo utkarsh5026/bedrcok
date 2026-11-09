@@ -43,7 +43,7 @@
       <div class="screen" data-demo="autoplay"></div>
       <div class="controls"></div>
       <div class="chapters"></div>
-      <p class="note">A 90-second tour, recorded from real kbforge output against a simulated AWS account. Click the video to pause. <a href="assets/kbforge-tour.mp4" data-tour-mp4 download>Download as MP4</a> · <a href="demo.html">Full screen</a></p>
+      <p class="note">A tour of under two minutes, recorded from real kbforge output against a simulated AWS account. Click the video to pause. <a href="assets/kbforge-tour.mp4" data-tour-mp4 download>Download as MP4</a> · <a href="demo.html">Full screen</a></p>
     </div>
   </div>
 </section>
@@ -125,7 +125,7 @@ kb</code></pre>
           <div><span class="badge" style="--c:var(--red)">blocked</span> fix this first</div>
         </div>
       </div>
-      <figure class="shot tall"><a href="assets/screens/plan.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/plan-dark.png"><img src="assets/screens/plan.png" alt="Full plan card: summary, data flow, four preflight checks and six numbered steps with CREATE and RUN badges" loading="lazy" width="2524" height="2516"></picture></a></figure>
+      <figure class="shot tall"><a href="assets/screens/plan.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/plan-dark.png"><img src="assets/screens/plan.png" alt="Full plan card: summary, data flow, four preflight checks and six numbered steps with CREATE and RUN badges" loading="lazy" width="2524" height="2554"></picture></a></figure>
     </div>
 
     <div class="row" id="blocked">
@@ -135,7 +135,7 @@ kb</code></pre>
         <p>A typo in the bucket name, a model you don't have access to, the wrong region: the plan turns <b>red</b>, says what to do, and <code>apply()</code> refuses to start. Nothing is ever half-built.</p>
         <p>Fix it, run <code>kb.plan()</code> again, carry on. Common fixes are on the <a href="reference.html#troubleshooting">help page</a>.</p>
       </div>
-      <figure class="shot tall"><a href="assets/screens/blocked.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/blocked-dark.png"><img src="assets/screens/blocked.png" alt="A plan with a red Blocked banner: the source bucket finanse-reports doesn't exist" loading="lazy" width="2524" height="2566"></picture></a></figure>
+      <figure class="shot tall"><a href="assets/screens/blocked.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/blocked-dark.png"><img src="assets/screens/blocked.png" alt="A plan with a red Blocked banner: the source bucket finanse-reports doesn't exist" loading="lazy" width="2524" height="2606"></picture></a></figure>
     </div>
 
     <div class="row" id="build">
@@ -159,21 +159,29 @@ kb</code></pre>
         <h3>Ask it something</h3>
 <pre><code>kb.ask(<span class="s">"How many weeks of parental leave?"</span>)</code></pre>
         <p>You'll see the passages that match best, with a score and the file each came from. If the right passages come back, your knowledge base is ready to plug into a chatbot or app.</p>
+        <p>Want a written answer too? <code>kb.ask("…", answer=True)</code> has a model answer from those passages, with numbered citations to each one it used.</p>
       </div>
-      <figure class="shot"><a href="assets/screens/ask.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/ask-dark.png"><img src="assets/screens/ask.png" alt="Three retrieved chunks with relevance bars, scores and the S3 path of each source document" loading="lazy" width="2524" height="870"></picture></a></figure>
+      <div>
+        <figure class="shot"><a href="assets/screens/ask.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/ask-dark.png"><img src="assets/screens/ask.png" alt="Three retrieved chunks with relevance bars, scores and the S3 path of each source document" loading="lazy" width="2524" height="870"></picture></a><figcaption>Just the passages.</figcaption></figure>
+        <figure class="shot"><a href="assets/screens/answer.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/answer-dark.png"><img src="assets/screens/answer.png" alt="A written answer about parental leave with numbered citation markers, followed by the two cited source passages" loading="lazy" width="2524" height="932"></picture></a><figcaption>With <code>answer=True</code>: a written answer that cites them.</figcaption></figure>
+      </div>
     </div>
 
     <div class="row" id="later">
       <div class="text">
         <div class="num">Afterwards</div>
         <h3>Keep it fresh, or clean it up</h3>
-<pre><code>kb.sync()                  <span class="c"># documents changed</span>
+<pre><code>kb = KnowledgeBase.open(<span class="s">"hr-policies"</span>)   <span class="c"># in a new notebook</span>
+kb.sync()                  <span class="c"># documents changed</span>
 kb.status()                <span class="c"># is everything healthy?</span>
 kb.destroy()               <span class="c"># preview the delete</span>
 kb.destroy(confirm=<span class="k">True</span>)   <span class="c"># actually delete</span></code></pre>
-        <p><code>destroy()</code> only removes what kbforge created. <b>Your documents are never touched.</b></p>
+        <p>Forgot the name? <code>kbforge.knowledge_bases()</code> lists every one kbforge built in the region. <code>destroy()</code> only removes what kbforge created. <b>Your documents are never touched.</b></p>
       </div>
-      <figure class="shot"><a href="assets/screens/status.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/status-dark.png"><img src="assets/screens/status.png" alt="Status card: knowledge base ID, region, embedding model, vector store, data source and last sync" loading="lazy" width="2524" height="704"></picture></a></figure>
+      <div>
+        <figure class="shot"><a href="assets/screens/status.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/status-dark.png"><img src="assets/screens/status.png" alt="Status card: knowledge base ID, region, embedding model, vector store, data source and last sync" loading="lazy" width="2524" height="750"></picture></a><figcaption>How one is doing.</figcaption></figure>
+        <figure class="shot"><a href="assets/screens/list.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/list-dark.png"><img src="assets/screens/list.png" alt="Table of three knowledge bases built by kbforge, with status, source, last sync and model, plus a KnowledgeBase.open example" loading="lazy" width="2524" height="996"></picture></a><figcaption>Everything kbforge built in the region.</figcaption></figure>
+      </div>
     </div>
   </div>
 </section>
@@ -198,8 +206,8 @@ kbforge.wizard()</code></pre>
             <p><b>Show as code</b> gives you the equivalent Python and YAML, so you can graduate to a saved config later.</p>
           </div>
           <div>
-            <figure class="shot tall"><a href="assets/screens/wizard-form.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/wizard-form-dark.png"><img src="assets/screens/wizard-form.png" alt="The wizard: a stepper header, numbered sections with option cards for documents, embedding model, vector store and chunking, and a live preview panel on the right" loading="lazy" width="2524" height="3474"></picture></a></figure>
-            <figure class="shot tall"><a href="assets/screens/wizard-built.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/wizard-built-dark.png"><img src="assets/screens/wizard-built.png" alt="The wizard after building: every stage ticked, the progress card, the ready card and a Try it box for asking questions" loading="lazy" width="2524" height="2952"></picture></a><figcaption>After building, a "Try it" box lets you ask a question straight away.</figcaption></figure>
+            <figure class="shot tall"><a href="assets/screens/wizard-form.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/wizard-form-dark.png"><img src="assets/screens/wizard-form.png" alt="The wizard: a stepper header, numbered sections with option cards for documents, embedding model, vector store and chunking, and a live preview panel on the right" loading="lazy" width="2524" height="4024"></picture></a></figure>
+            <figure class="shot tall"><a href="assets/screens/wizard-built.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/wizard-built-dark.png"><img src="assets/screens/wizard-built.png" alt="The wizard after building: every stage ticked, the progress card, the ready card and a Try it box for asking questions" loading="lazy" width="2524" height="3020"></picture></a><figcaption>After building, a "Try it" box lets you ask a question straight away.</figcaption></figure>
           </div>
         </div>
       </div>

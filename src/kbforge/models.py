@@ -8,6 +8,9 @@ A parsing model is optional. Bedrock's default parser only pulls the plain text 
 file; with a parsing model, a vision-capable model reads every PDF page instead, so tables,
 charts, images and scanned pages become searchable text too.
 
+An answer model is also optional. ``kb.ask(question, answer=True)`` has it read the retrieved
+chunks and write an answer that cites them, instead of just showing the chunks.
+
 Users pick a model by a short alias (``"titan-v2"``, ``"nova-lite"``) instead of a long model id.
 To see which parsing models your own account can use, call ``kbforge.parsing_models()``.
 """
@@ -18,6 +21,8 @@ import json
 import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
+
+from .errors import did_you_mean
 
 
 @dataclass(frozen=True)
@@ -108,7 +113,7 @@ def resolve_model(name: str, dimensions: Optional[int] = None) -> EmbeddingModel
         known = ", ".join(EMBEDDING_MODELS)
         raise ValueError(
             f"Unknown embedding model {name!r}. Use one of: {known}, "
-            "or pass a raw model id together with dimensions=..."
+            f"or pass a raw model id together with dimensions=....{did_you_mean(name, EMBEDDING_MODELS)}"
         )
     return EmbeddingModel(name, name, name, (dimensions,), dimensions)
 
@@ -228,7 +233,7 @@ def resolve_parsing_model(name: str) -> ParsingModel:
         raise ValueError(
             f"Unknown parsing model {name!r}. Use one of: {', '.join(PARSING_MODELS)}, or a Bedrock model id "
             "such as 'anthropic.claude-3-haiku-20240307-v1:0'. Run kbforge.parsing_models() to see what your "
-            "account can use."
+            f"account can use.{did_you_mean(name, PARSING_MODELS)}"
         )
     prefix, _, rest = name.partition(".")
     profile = prefix if prefix in PROFILE_PREFIXES else ""
@@ -241,3 +246,49 @@ def resolve_parsing_model(name: str) -> ParsingModel:
     known = next((m for m in PARSING_MODELS.values() if m.model_id == base), None)
     label = known.label if known else name
     return ParsingModel(name, base, label, known.note if known else "", profile=profile)
+
+
+#: Models kbforge knows by alias for writing an answer from retrieved chunks (``kb.ask(..., answer=True)``).
+#: They're called through the region's cross-region inference profile, like parsing models.
+ANSWER_MODELS = {
+    m.alias: m
+    for m in [
+        ParsingModel("nova-lite", "amazon.nova-lite-v1:0", "Amazon Nova Lite", "Good default. Cheap and quick."),
+        ParsingModel("nova-pro", "amazon.nova-pro-v1:0", "Amazon Nova Pro", "Better at long or tricky questions."),
+        ParsingModel(
+            "claude-haiku-4.5",
+            "anthropic.claude-haiku-4-5-20251001-v1:0",
+            "Claude Haiku 4.5",
+            "Fast, careful answers that stick to the sources.",
+        ),
+        ParsingModel(
+            "claude-sonnet-4",
+            "anthropic.claude-sonnet-4-20250514-v1:0",
+            "Claude Sonnet 4",
+            "The strongest writer here, and the most expensive.",
+        ),
+    ]
+}
+
+#: The model ``kb.ask(..., answer=True)`` uses unless told otherwise.
+DEFAULT_ANSWER_MODEL = "nova-lite"
+
+
+def resolve_answer_model(name: str) -> ParsingModel:
+    """Accept an alias (``"nova-pro"``), a model id, or an inference profile id for writing answers.
+
+    Any Bedrock text model works here, so beyond the aliases this only checks the id's shape;
+    Bedrock itself says if the model can't be used.
+    """
+    if name in ANSWER_MODELS:
+        return ANSWER_MODELS[name]
+    if not _MODEL_ID_RE.match(name or ""):
+        raise ValueError(
+            f"Unknown answer model {name!r}. Use one of: {', '.join(ANSWER_MODELS)}, or a Bedrock model or "
+            f"inference profile id such as 'us.amazon.nova-pro-v1:0'.{did_you_mean(name, ANSWER_MODELS)}"
+        )
+    prefix, _, rest = name.partition(".")
+    profile = prefix if prefix in PROFILE_PREFIXES else ""
+    base = rest if profile else name
+    known = next((m for m in ANSWER_MODELS.values() if m.model_id == base), None)
+    return ParsingModel(name, base, known.label if known else name, profile=profile)

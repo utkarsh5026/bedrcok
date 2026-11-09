@@ -54,13 +54,20 @@ class FakeIam:
             raise aws_error("NoSuchEntity")
         return {"Role": self.roles[RoleName]}
 
-    def create_role(self, RoleName: str, AssumeRolePolicyDocument: str, Tags: list, **_: Any) -> Dict[str, Any]:
-        role = {
+    def create_role(
+        self, RoleName: str, AssumeRolePolicyDocument: str, Tags: list, PermissionsBoundary: str = "", **_: Any
+    ) -> Dict[str, Any]:
+        role: Dict[str, Any] = {
             "RoleName": RoleName,
             "Arn": f"arn:aws:iam::{ACCOUNT}:role/{RoleName}",
             "AssumeRolePolicyDocument": AssumeRolePolicyDocument,
             "Tags": Tags,
         }
+        if PermissionsBoundary:
+            role["PermissionsBoundary"] = {
+                "PermissionsBoundaryType": "Policy",
+                "PermissionsBoundaryArn": PermissionsBoundary,
+            }
         self.roles[RoleName] = role
         self.policies[RoleName] = {}
         return {"Role": role}
@@ -263,6 +270,7 @@ class FakeBedrockAgent:
             "knowledgeBaseId": kb_id,
             "knowledgeBaseArn": f"arn:aws:bedrock:{REGION}:{ACCOUNT}:knowledge-base/{kb_id}",
             "name": kwargs["name"],
+            "description": kwargs.get("description", ""),
             "status": "ACTIVE",
             "knowledgeBaseConfiguration": kwargs["knowledgeBaseConfiguration"],
             "storageConfiguration": kwargs["storageConfiguration"],
@@ -434,6 +442,43 @@ class FakeOpenSearch:
 
 
 class FakeAgentRuntime:
+    def __init__(self) -> None:
+        #: The last retrieve_and_generate request, so tests can check the model and settings sent.
+        self.last_generate: Dict[str, Any] = {}
+
+    def retrieve_and_generate(self, input: Dict[str, str], retrieveAndGenerateConfiguration: Dict[str, Any], **_: Any):
+        self.last_generate = {"input": input, **retrieveAndGenerateConfiguration}
+        leave = {
+            "content": {"text": "Employees get <b>26 weeks</b> of parental leave."},
+            "location": {"type": "S3", "s3Location": {"uri": "s3://docs/hr/leave.pdf"}},
+        }
+        notes = {
+            "content": {"text": "Leave can be split into two blocks."},
+            "location": {"type": "S3", "s3Location": {"uri": "s3://docs/hr/notes.md"}},
+        }
+        answer = "You get 26 weeks of parental leave. It can be taken in two blocks."
+        first = answer.index(".")
+        return {
+            "output": {"text": answer},
+            "citations": [
+                {
+                    "generatedResponsePart": {
+                        "textResponsePart": {"text": answer[: first + 1], "span": {"start": 0, "end": first}}
+                    },
+                    "retrievedReferences": [leave],
+                },
+                {
+                    "generatedResponsePart": {
+                        "textResponsePart": {
+                            "text": answer[first + 2 :],
+                            "span": {"start": first + 2, "end": len(answer) - 1},
+                        }
+                    },
+                    "retrievedReferences": [notes, leave],
+                },
+            ],
+        }
+
     def retrieve(self, knowledgeBaseId: str, retrievalQuery: Dict[str, str], **_: Any) -> Dict[str, Any]:
         return {
             "retrievalResults": [

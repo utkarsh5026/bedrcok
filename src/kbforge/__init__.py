@@ -8,13 +8,15 @@
     kb.ask("How many days of leave do I get?")
 
 New here? Run ``kbforge.guide()`` in a notebook cell, or ``kbforge.wizard()`` for a form.
+Built one before? ``kbforge.knowledge_bases()`` lists them and ``KnowledgeBase.open(name)`` picks one up.
 """
 
 from typing import Any, Optional
 
+from .deployed import KnowledgeBases
 from .guide import guide
 from .knowledge_base import Answers, KBForgeError, KnowledgeBase, Status
-from .models import EMBEDDING_MODELS, PARSING_MODELS
+from .models import ANSWER_MODELS, EMBEDDING_MODELS, PARSING_MODELS
 from .parsers import ParsingModels
 from .plan import ApplyResult, Plan
 from .spec import Chunking, KBSpec, Parsing, S3Source, WebSource
@@ -45,7 +47,23 @@ def parsing_models(region: Optional[str] = None, session: Any = None) -> Parsing
     return list_parsing_models(aws)
 
 
+def knowledge_bases(region: Optional[str] = None, session: Any = None) -> KnowledgeBases:
+    """List the knowledge bases kbforge built in a region, with their health and last sync (read-only).
+
+    Shows a table in a notebook. Open one with ``KnowledgeBase.open(name)`` to sync, query or
+    delete it without retyping its settings. Knowledge bases kbforge didn't create aren't listed.
+    """
+    from .aws import Aws
+    from .deployed import list_knowledge_bases
+    from .knowledge_base import friendly_aws_errors
+
+    aws = Aws(region=region, session=session)
+    with friendly_aws_errors():
+        return list_knowledge_bases(aws)
+
+
 __all__ = [
+    "ANSWER_MODELS",
     "EMBEDDING_MODELS",
     "PARSING_MODELS",
     "Answers",
@@ -54,6 +72,7 @@ __all__ = [
     "KBForgeError",
     "KBSpec",
     "KnowledgeBase",
+    "KnowledgeBases",
     "Parsing",
     "ParsingModels",
     "Plan",
@@ -62,6 +81,7 @@ __all__ = [
     "WebSource",
     "__version__",
     "guide",
+    "knowledge_bases",
     "parsing_models",
     "wizard",
 ]
