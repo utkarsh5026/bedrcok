@@ -269,6 +269,7 @@ def test_methods_explain_when_the_knowledge_base_doesnt_exist(kb):
 def test_cli_sync_commands(built, fake_aws, tmp_path, monkeypatch, capsys):
     config = built.save(tmp_path / "kb.yaml")
     monkeypatch.setattr("kbforge.knowledge_base.Aws", lambda region=None, session=None: fake_aws)
+    monkeypatch.setenv("NO_COLOR", "1")  # CI sets FORCE_COLOR; compare plain text
 
     assert main(["check-sync", str(config)]) == 0
     assert "Ready to sync" in capsys.readouterr().out
