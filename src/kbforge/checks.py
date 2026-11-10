@@ -1,7 +1,10 @@
 """Preflight checks: catch the usual "why did my knowledge base fail?" problems up front.
 
-Each check returns a ``Check`` with a status (ok / warn / fail) and a plain-English detail.
-A single ``fail`` blocks ``apply()``; warnings are shown but don't block.
+Each check returns a ``Check`` with a status (ok / warn / fail, or info for something that
+couldn't be verified in advance) and a plain-English detail. A single ``fail`` blocks
+``apply()``; warnings and notes are shown but don't block.
+
+``sync_check.py`` reuses the public checks here (credentials, models, source) before a sync.
 
 What we check:
 
@@ -31,6 +34,8 @@ MAX_FILE_BYTES = 50 * 1024 * 1024
 SCAN_LIMIT = 20_000
 
 OK, WARN, FAIL = "ok", "warn", "fail"
+#: Neither good nor bad news: something kbforge couldn't verify in advance, said so plainly.
+INFO = "info"
 
 
 @dataclass
@@ -71,7 +76,7 @@ def human_bytes(n: float) -> str:
     return f"{n:.1f} TB"
 
 
-def _check_identity(aws: Aws) -> Check:
+def check_identity(aws: Aws) -> Check:
     """Can we call AWS at all? Everything else depends on this."""
     try:
         return Check(OK, "AWS credentials", f"{aws.caller_arn} · account {aws.account_id} · {aws.region}")
@@ -79,7 +84,7 @@ def _check_identity(aws: Aws) -> Check:
         return Check(FAIL, "AWS credentials", f"Couldn't call STS: {error_message(exc)}")
 
 
-def _check_model(spec: KBSpec, aws: Aws) -> Check:
+def check_model(spec: KBSpec, aws: Aws) -> Check:
     """Embed the word "hello" — the only reliable way to know the model is enabled for you."""
     model = spec.model
     title = f"Embedding model · {model.label}"
@@ -102,7 +107,7 @@ def _check_model(spec: KBSpec, aws: Aws) -> Check:
         return Check(FAIL, title, hint)
 
 
-def _check_parser(spec: KBSpec, aws: Aws) -> Optional[Check]:
+def check_parser(spec: KBSpec, aws: Aws) -> Optional[Check]:
     """Ask the parsing model for one token, so a model you can't use stops the plan, not the sync.
 
     Silent for the default parser. Data Automation can't be tried without a document, so it
@@ -194,7 +199,7 @@ def scan_s3(aws: Aws, bucket: str, prefix: str) -> SourceScan:
     return scan
 
 
-def _check_s3_source(src: S3Source, aws: Aws) -> List[Check]:
+def check_s3_source(src: S3Source, aws: Aws) -> List[Check]:
     """Does the bucket exist, is it in our region, and does it hold files Bedrock can read?"""
     s3 = aws.client("s3")
     checks: List[Check] = []
@@ -247,7 +252,7 @@ def _check_s3_source(src: S3Source, aws: Aws) -> List[Check]:
     return checks
 
 
-def _check_web_source(src: WebSource) -> List[Check]:
+def check_web_source(src: WebSource) -> List[Check]:
     """We can't test-crawl from here, so just summarise the seeds and remind about permission."""
     return [
         Check(
@@ -313,20 +318,20 @@ def run_checks(spec: KBSpec, aws: Aws, identity_only: bool = False) -> List[Chec
     ``identity_only`` skips everything but the credentials check (used when destroying,
     where the model and source don't matter).
     """
-    ident = _check_identity(aws)
+    ident = check_identity(aws)
     if ident.status == FAIL or identity_only:
         return [ident]
-    checks = [ident, _check_model(spec, aws)]
-    parser = _check_parser(spec, aws)
+    checks = [ident, check_model(spec, aws)]
+    parser = check_parser(spec, aws)
     if parser:
         checks.append(parser)
     chunk_size = _check_chunk_size(spec)
     if chunk_size:
         checks.append(chunk_size)
     if isinstance(spec.source, S3Source):
-        checks += _check_s3_source(spec.source, aws)
+        checks += check_s3_source(spec.source, aws)
     else:
-        checks += _check_web_source(spec.source)
+        checks += check_web_source(spec.source)
     checks.append(_check_vector_store(spec, aws))
     role = _check_role(spec, aws)
     if role:

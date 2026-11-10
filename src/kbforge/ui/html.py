@@ -10,16 +10,18 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any, Dict, List
 
-from ..checks import FAIL, OK, WARN, Check, human_bytes
+from ..checks import FAIL, INFO, OK, WARN, Check, human_bytes
 from ..spec import VECTOR_STORES, KBSpec
 from ..steps import Action
 from .theme import SERIES, card, esc
 
 if TYPE_CHECKING:
     from ..deployed import KnowledgeBases, Status
+    from ..ingestion import IngestionJob, IngestionJobs
     from ..knowledge_base import Answers
     from ..parsers import ParsingModels
     from ..plan import ApplyResult, Plan, PlanItem
+    from ..sync_check import SyncCheck
 
 #: How each action is labelled and coloured in the plan.
 ACTION_STYLE = {
@@ -35,7 +37,12 @@ ACTION_STYLE = {
     Action.KEEP: ("keep", "c-amber"),
 }
 
-CHECK_STYLE = {OK: ("✓", "var(--kbf-green)"), WARN: ("!", "var(--kbf-amber)"), FAIL: ("✕", "var(--kbf-red)")}
+CHECK_STYLE = {
+    OK: ("✓", "var(--kbf-green)"),
+    INFO: ("i", "var(--kbf-blue)"),
+    WARN: ("!", "var(--kbf-amber)"),
+    FAIL: ("✕", "var(--kbf-red)"),
+}
 
 
 def console_url(region: str) -> str:
@@ -247,7 +254,8 @@ def render_apply_result(result: ApplyResult) -> str:
     grid = "".join(f'<span class="k">{esc(k)}</span><span class="mono">{esc(v)}</span>' for k, v in rows)
     usage = (
         'kb.ask("a question your documents answer")\n'
-        "kb.sync()      # after adding or changing documents\n\n"
+        "kb.sync()      # after adding or changing documents\n"
+        "kb.syncs()     # how every sync went (kb.sync_panel() for buttons)\n\n"
         "# From any application:\n"
         "import boto3\n"
         f'runtime = boto3.client("bedrock-agent-runtime", region_name="{result.region}")\n'
@@ -436,4 +444,239 @@ def render_parsing_models(models: ParsingModels) -> str:
         + f'<div class="muted">{intro}</div>{warning}</div>'
         f'<div class="section">{table}</div>'
         f'<div class="section next"><h3>Use one</h3>{usage}</div>'
+    )
+
+
+def _job_badge(job: IngestionJob) -> str:
+    """The sync's status as a coloured badge, with a small spinner while it runs."""
+    label, colour = job.outcome
+    spinner = '<span class="spin"></span>' if job.running else ""
+    return f'<span class="badge {colour}">{spinner}{esc(label)}</span>'
+
+
+#: The count tiles on a sync card: (label, attribute, colour when non-zero, what it means).
+_TILES = [
+    ("Looked at", "scanned", "", "Every file Bedrock found in the source, changed or not."),
+    ("New", "new", "c-green", "Files indexed for the first time."),
+    ("Changed", "updated", "c-blue", "Files that had changed and were indexed again."),
+    ("Unchanged", "unchanged", "", "Files already indexed and unchanged, so they needed no work."),
+    ("Removed", "deleted", "", "Files gone from the source, whose vectors were removed."),
+    ("Failed", "failed", "c-red", "Files Bedrock couldn't index; see below for why."),
+    ("Skipped", "skipped", "c-amber", "Files Bedrock passed over, such as types it doesn't read."),
+]
+
+
+def _job_counts(job: IngestionJob) -> str:
+    """Count tiles plus a bar showing how the files split between new, changed, unchanged and failed."""
+    tiles = []
+    for label, attr, colour, meaning in _TILES:
+        value = getattr(job, attr)
+        if attr == "skipped" and not value:
+            continue
+        tiles.append(
+            f'<div class="tile {colour if value else ""}" title="{esc(meaning)}">'
+            f'<div class="l">{label}</div><div class="n">{value:,}</div></div>'
+        )
+    parts = [
+        ("new", job.new, "var(--kbf-green)"),
+        ("changed", job.updated, "var(--kbf-blue)"),
+        ("unchanged", job.unchanged, "var(--kbf-border)"),
+        ("failed", job.failed, "var(--kbf-red)"),
+        ("skipped", job.skipped, "var(--kbf-amber)"),
+    ]
+    total = sum(n for _, n, _ in parts)
+    bar = ""
+    if total:
+        segments = "".join(
+            f'<i style="width:{100 * n / total:.2f}%;background:{c}" title="{name}: {n:,}"></i>'
+            for name, n, c in parts
+            if n
+        )
+        legend = "".join(f'<span><i style="background:{c}"></i>{name} {n:,}</span>' for name, n, c in parts if n)
+        bar = f'<div class="bar">{segments}</div><div class="legend">{legend}</div>'
+    metadata = (
+        f'<div class="note muted">Also read {job.metadata_files:,} .metadata.json file(s) with document '
+        "attributes.</div>"
+        if job.metadata_files
+        else ""
+    )
+    return f'<div class="tiles">{"".join(tiles)}</div>{bar}{metadata}'
+
+
+#: At most this many problem files are listed on a card; the rest are counted.
+MAX_PROBLEMS_SHOWN = 50
+
+
+def _job_problems(job: IngestionJob) -> str:
+    """The files Bedrock couldn't index, with why and what to do, when they were looked up."""
+    note = f'<div class="warn c-amber">{esc(job.problems_note)}</div>' if job.problems_note else ""
+    if job.problems is None:
+        return f'<div class="section"><h3>Files that need attention</h3>{note}</div>' if note else ""
+    if not job.problems:
+        if note:
+            return f'<div class="section"><h3>Files that need attention</h3>{note}</div>'
+        return (
+            '<div class="section"><h3>Files that need attention</h3>'
+            '<div class="muted">None: every file Bedrock found is indexed.</div></div>'
+        )
+    rows = "".join(
+        f'<tr><td class="mono">{esc(p.uri)}</td><td><span class="badge {p.colour}">{esc(p.label)}</span></td>'
+        f"<td>{esc(p.reason or 'Bedrock gave no reason.')}"
+        + (f'<div class="why muted">{esc(p.advice)}</div>' if p.advice else "")
+        + "</td></tr>"
+        for p in job.problems[:MAX_PROBLEMS_SHOWN]
+    )
+    more = len(job.problems) - MAX_PROBLEMS_SHOWN
+    more_html = ""
+    if more > 0:
+        more_html = f'<div class="note muted">…and {more:,} more. <code>job.problems</code> has them all.</div>'
+    return (
+        f'<div class="section"><h3>Files that need attention ({len(job.problems):,})</h3>'
+        '<div class="tbl"><table><thead><tr><th>File</th><th>Status</th><th>Why, and what to do</th></tr></thead>'
+        f"<tbody>{rows}</tbody></table></div>{more_html}{note}</div>"
+    )
+
+
+def _job_next(job: IngestionJob) -> str:
+    """The code to run next, depending on how the sync went."""
+    if job.running:
+        text = "kb.syncs()       # check on it again\nkb.stop_sync()   # stop it"
+    elif job.status == "FAILED":
+        text = "kb.check_sync()   # look for the cause, read-only\nkb.sync()         # then try again"
+    elif job.status == "STOPPED":
+        text = "kb.sync()   # finish indexing"
+    elif job.failed:
+        text = "# fix or remove the files listed above, then\nkb.sync()"
+    else:
+        text = 'kb.ask("a question your documents answer")\nkb.syncs()   # every recent sync'
+    return f'<div class="section next"><h3>Next</h3>{_code(text)}</div>'
+
+
+def render_ingestion_job(job: IngestionJob) -> str:
+    """One sync: what happened in a sentence, the counts, why it failed, and which files need attention."""
+    followed = (
+        '<div class="note muted">A sync was already running, so kbforge followed it instead of starting a '
+        "second one.</div>"
+        if job.followed
+        else ""
+    )
+    failure = ""
+    if job.status == "FAILED":
+        reasons = "".join(f"<li>{esc(r)}</li>" for r in job.failure_reasons) or "<li>Bedrock didn't say why.</li>"
+        failure = (
+            f'<div class="banner c-red"><b>Why it failed</b><ul style="margin:4px 0 0 18px;padding:0">{reasons}</ul>'
+            f'<div style="margin-top:6px">{esc(job.advice)}</div></div>'
+        )
+    head = (
+        f'<div class="head"><div class="eyebrow">kbforge · sync · {esc(job.kb_name)}</div>'
+        f"<h2>Sync of {esc(job.kb_name)} {_job_badge(job)}</h2>"
+        + _chips([("job", job.job_id), ("region", job.region)] + ([("source", job.source)] if job.source else []))
+        + f'<div class="lead">{esc(job.headline)}</div>'
+        f'<div class="muted">{esc(job.timing)}</div>{followed}{failure}</div>'
+    )
+    counts = ""
+    if job.scanned or job.status == "COMPLETE":
+        counts = f'<div class="section"><h3>Documents</h3>{_job_counts(job)}</div>'
+    return card(head + counts + _job_problems(job) + _job_next(job))
+
+
+#: The suggested code on the history card of a knowledge base that has never synced.
+NEVER_SYNCED_NEXT = "kb.check_sync()   # will a sync work? (read-only)\nkb.sync()"
+
+
+def render_ingestion_jobs(jobs: IngestionJobs) -> str:
+    """The table for ``kb.syncs()``: recent syncs, newest first, with how each went."""
+    from ..ingestion import clock, human_duration, time_ago
+
+    chips = _chips([("region", jobs.region), ("source", jobs.source), ("knowledge base", jobs.kb_id)])
+    if not jobs.items:
+        return card(
+            f'<div class="head"><div class="eyebrow">kbforge · syncs</div><h2>{esc(jobs.kb_name)} '
+            f'<span class="badge c-grey">never synced</span></h2>{chips}</div>'
+            '<div class="section muted">No syncs yet. A sync reads your documents and makes them searchable.</div>'
+            f'<div class="section next"><h3>Next</h3>{_code(NEVER_SYNCED_NEXT)}</div>'
+        )
+    facts = []
+    if jobs.running:
+        facts.append(f"<span><b>Running now</b> · started {esc(time_ago(jobs.running.started_at))}</span>")
+    success = jobs.last_success
+    facts.append(
+        f"<span>Last complete sync <b>{esc(time_ago(success.started_at) or 'unknown')}</b></span>"
+        if success
+        else "<span><b>No complete sync</b> in this list</span>"
+    )
+    rows = []
+    for job in jobs:
+        reason = ""
+        if job.status == "FAILED" and job.failure_reasons:
+            reason = f'<div class="why muted">{esc(job.failure_reasons[0])}</div>'
+        took = f"running {human_duration(job.seconds)}" if job.running else human_duration(job.seconds)
+        counts = [job.scanned, job.new, job.updated, job.deleted]
+        cells = "".join(f"<td>{n:,}</td>" for n in counts)
+        cells += f'<td class="c-red"><b style="color:var(--c)">{job.failed:,}</b></td>' if job.failed else "<td>0</td>"
+        rows.append(
+            f'<tr><td class="nw">{esc(time_ago(job.started_at))}'
+            f'<div class="why muted">{esc(clock(job.started_at))}</div>'
+            f'<div class="why muted mono">{esc(job.job_id)}</div></td>'
+            f"<td>{_job_badge(job)}{reason}</td><td class='nw'>{esc(took)}</td>{cells}</tr>"
+        )
+    more = ""
+    if jobs.more:
+        more = '<div class="note muted">Older syncs aren\'t shown; pass <code>limit=</code> to see more.</div>'
+    table = (
+        '<div class="tbl"><table><thead><tr><th>Started</th><th>Status</th><th>Took</th><th>Looked at</th><th>New</th>'
+        f"<th>Changed</th><th>Removed</th><th>Failed</th></tr></thead><tbody>{''.join(rows)}</tbody>"
+        f"</table></div>{more}"
+    )
+    latest = jobs.items[0]
+    next_code = (
+        f'kb.sync_job("{latest.job_id}")   # the latest sync in detail: which files failed, and why\n'
+        "kb.sync()                        # sync again after documents change"
+    )
+    return card(
+        f'<div class="head"><div class="eyebrow">kbforge · syncs</div>'
+        f"<h2>{esc(jobs.kb_name)}: {len(jobs)} recent sync{'s' if len(jobs) != 1 else ''}</h2>"
+        f'{chips}<div class="summary">{"".join(facts)}</div></div>'
+        f'<div class="section">{table}</div>'
+        f'<div class="section next"><h3>Next</h3>{_code(next_code)}</div>'
+    )
+
+
+def render_sync_check(report: SyncCheck) -> str:
+    """The card for ``kb.check_sync()``: will a sync work, and if not, what to fix."""
+    if report.blockers:
+        badge, banner = (
+            '<span class="badge c-red">blocked</span>',
+            '<div class="banner c-red"><b>Blocked — a sync would fail.</b> Nothing has been started. Fix these, then '
+            "check again:"
+            + '<ul style="margin:6px 0 0 18px;padding:0">'
+            + "".join(f"<li>{esc(b)}</li>" for b in report.blockers)
+            + "</ul></div>",
+        )
+    elif report.running:
+        badge, banner = (
+            '<span class="badge c-blue">sync running</span>',
+            '<div class="banner c-blue"><b>A sync is already running.</b> <code>kb.sync()</code> follows it instead '
+            "of starting another, and <code>kb.stop_sync()</code> stops it.</div>",
+        )
+    elif report.warnings:
+        badge, banner = (
+            '<span class="badge c-amber">ready, with warnings</span>',
+            '<div class="banner c-amber"><b>Ready, with warnings.</b> A sync can start, but read the warnings below: '
+            "some or all files may fail.</div>",
+        )
+    else:
+        badge, banner = (
+            '<span class="badge c-green">ready</span>',
+            '<div class="banner c-green"><b>Ready to sync.</b> These checks only read from AWS; nothing has been '
+            "started.</div>",
+        )
+    chips = [("account", report.account or "unknown"), ("region", report.region), ("source", report.source)]
+    checks = "".join(_render_check(c) for c in report.checks)
+    next_code = "# after fixing the problems above\nkb.check_sync()" if report.blockers else "kb.sync()"
+    return card(
+        f'<div class="head"><div class="eyebrow">kbforge · sync check</div><h2>{esc(report.kb_name)} {badge}</h2>'
+        f'{_chips(chips)}<div class="muted" style="margin-top:8px">{esc(report.summary)}</div>{banner}</div>'
+        f'<div class="section"><h3>Checks</h3><ul class="checks">{checks}</ul></div>'
+        f'<div class="section next"><h3>Next</h3>{_code(next_code)}</div>'
     )

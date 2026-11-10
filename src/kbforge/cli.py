@@ -3,7 +3,10 @@
 kbforge init                    # write a starter kb.yaml (or: kbforge init kb.json)
 kbforge plan kb.yaml            # checks + what would be built (kb.json works everywhere too)
 kbforge apply kb.yaml           # build it (asks before changing anything)
-kbforge sync kb.yaml            # re-ingest after documents change
+kbforge sync kb.yaml            # re-ingest after documents change (checks first; --no-wait to not wait)
+kbforge check-sync kb.yaml      # would a sync work? permissions, roles, source, models (read-only)
+kbforge syncs kb.yaml           # recent syncs; `kbforge syncs kb.yaml latest` (or a job id) for details
+kbforge stop-sync kb.yaml       # stop the running sync
 kbforge ask kb.yaml "question"  # try a query (add --answer for a written answer with citations)
 kbforge list                    # the knowledge bases kbforge built in this region
 kbforge status kb.yaml
@@ -29,6 +32,7 @@ from .parsers import known_parsing_models, list_parsing_models
 from .plan import ApplyResult, make_plan
 from .spec import config_format
 from .steps import explain_error
+from .sync_check import SyncCheck
 
 STARTER_YAML = """\
 # Describe your knowledge base, then run:  kbforge plan kb.yaml
@@ -129,8 +133,34 @@ def cmd_apply(args: argparse.Namespace) -> int:
 
 
 def cmd_sync(args: argparse.Namespace) -> int:
-    """``kbforge sync``: re-ingest the data source."""
-    print(_load(args).sync())
+    """``kbforge sync``: check, then re-ingest the data source; exit code 2 if blocked, 1 if the sync failed."""
+    result = _load(args).sync(wait=not args.no_wait, check=not args.skip_checks)
+    print(result)
+    if isinstance(result, SyncCheck):
+        return 2
+    return 1 if result.status in ("FAILED", "STOPPED") else 0
+
+
+def cmd_check_sync(args: argparse.Namespace) -> int:
+    """``kbforge check-sync``: the read-only pre-sync checks; exit code 2 if a sync would fail."""
+    report = _load(args).check_sync()
+    print(report)
+    return 0 if report.ready else 2
+
+
+def cmd_syncs(args: argparse.Namespace) -> int:
+    """``kbforge syncs``: recent syncs, or one in detail (``latest`` or a job id)."""
+    kb = _load(args)
+    if args.job:
+        print(kb.sync_job(None if args.job == "latest" else args.job))
+    else:
+        print(kb.syncs(limit=args.limit))
+    return 0
+
+
+def cmd_stop_sync(args: argparse.Namespace) -> int:
+    """``kbforge stop-sync``: stop the sync that's running."""
+    print(_load(args).stop_sync())
     return 0
 
 
@@ -210,7 +240,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-y", "--yes", action="store_true", help="don't ask for confirmation")
     p.set_defaults(func=cmd_apply)
 
-    with_config("sync", "re-ingest the data source").set_defaults(func=cmd_sync)
+    p = with_config("sync", "re-ingest the data source (runs the pre-sync checks first)")
+    p.add_argument("--no-wait", action="store_true", help="start the sync and return without waiting for it")
+    p.add_argument("--skip-checks", action="store_true", help="don't run the pre-sync checks first")
+    p.set_defaults(func=cmd_sync)
+    with_config("check-sync", "check a sync would work, without starting one").set_defaults(func=cmd_check_sync)
+    p = with_config("syncs", "list recent syncs, or show one in detail")
+    p.add_argument("job", nargs="?", help="'latest' or a job id, to show that sync in detail with failed files")
+    p.add_argument("-n", "--limit", type=int, default=10, help="how many recent syncs to list (default 10)")
+    p.set_defaults(func=cmd_syncs)
+    with_config("stop-sync", "stop the sync that's running").set_defaults(func=cmd_stop_sync)
     with_config("status", "show ids and the last sync").set_defaults(func=cmd_status)
 
     p = with_config("ask", "retrieve the best-matching chunks for a question")

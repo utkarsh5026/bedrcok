@@ -104,6 +104,14 @@ Resource names are derived from the KB name, so a second run finds what already 
 <td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/answer-dark.png"><img src="docs/assets/screens/answer.png" alt="kb.ask(answer=True) card: a written answer with numbered citations and its sources"></picture></td>
 <td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/list-dark.png"><img src="docs/assets/screens/list.png" alt="kbforge.knowledge_bases() table of the knowledge bases kbforge built, ready to open"></picture></td>
 </tr>
+<tr>
+<td align="center"><b>Keeping it fresh?</b> <code>kb.sync_panel()</code></td>
+<td align="center"><b>Will a sync work?</b> <code>kb.check_sync()</code></td>
+</tr>
+<tr>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/sync-panel-dark.png"><img src="docs/assets/screens/sync-panel.png" alt="The sync panel: recent syncs as cards, Check, Refresh, Stop and Sync now buttons, and the latest sync's counts and failed files with advice"></picture></td>
+<td><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/screens/sync-check-dark.png"><img src="docs/assets/screens/sync-check.png" alt="kb.check_sync() card: permissions, the knowledge base's role, models and source documents, checked before a sync"></picture></td>
+</tr>
 </table>
 
 <details>
@@ -113,6 +121,7 @@ Resource names are derived from the KB name, so a second run finds what already 
 ```bash
 kbforge plan  examples/kb.yaml     # or examples/kb.json: same keys, either format
 kbforge apply examples/kb.yaml
+kbforge sync  examples/kb.yaml     # checks first; `kbforge syncs examples/kb.yaml` for the history
 ```
 
 [`examples/kb.yaml`](examples/kb.yaml) documents every option, including the settings for each chunking strategy. [`examples/README.md`](examples/README.md) has the JSON versions.
@@ -143,7 +152,11 @@ Once it's built, the rest of the lifecycle is one call each:
 
 | Call | What it does |
 | --- | --- |
-| `kb.sync()` | Re-ingests the source after documents are added, changed or removed |
+| `kb.sync()` | Re-ingests the source after documents are added, changed or removed. Checks first, so a sync that would fail is never started; then shows live progress, what changed, and which files failed and why |
+| `kb.check_sync()` | Checks, read-only, that a sync would work: your permissions, the knowledge base's role (bucket, KMS key, models, vectors), the models and the files |
+| `kb.syncs()` | Lists recent syncs with their counts and failure reasons; `kb.sync_job()` shows one in detail with the files that need attention |
+| `kb.sync_panel()` | The same with buttons: Check, Sync now, Stop, and every recent sync to click through. Follows a running sync while you keep working |
+| `kb.stop_sync()` | Stops the running sync |
 | `kb.status()` | Shows ids, health, and how the last sync went |
 | `kb.ask("…")` | Retrieves the best-matching chunks for a question |
 | `kb.ask("…", answer=True)` | Also has a model (Nova Lite by default; pick another with `model=`) write an answer that cites those chunks |

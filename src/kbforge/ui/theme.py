@@ -114,6 +114,16 @@ body[data-jp-theme-light="false"] .kbf, body.vscode-dark .kbf, body.vscode-high-
 /* JupyterLab right-aligns and stripes notebook tables; these selectors outrank its rules. */
 .kbf .tbl table th, .kbf .tbl table td { text-align: left; }
 .kbf .tbl tbody tr:nth-child(n) { background: transparent; }
+.kbf .lead { font-size: 14px; line-height: 1.5; margin-top: 8px; }
+.kbf .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); gap: 8px; }
+.kbf .tile { padding: 9px 12px; background: var(--kbf-soft); border: 1px solid var(--kbf-border); border-radius: 8px; }
+.kbf .tile .n { font-size: 20px; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.kbf .tile .l { font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--kbf-muted); font-weight: 600; }
+.kbf .tile.c-green .n, .kbf .tile.c-blue .n, .kbf .tile.c-red .n, .kbf .tile.c-amber .n { color: var(--c); }
+.kbf .tiles + .bar { max-width: none; margin-top: 12px; }
+.kbf .badge .spin { width: 9px; height: 9px; border-width: 1.5px; margin: 0 5px 0 0; vertical-align: -1px; border-top-color: var(--c); }
+.kbf .why { font-size: 12px; margin-top: 2px; }
+.kbf .tbl td .why { max-width: 420px; }
 @media (max-width: 640px) { .kbf .arrow { display: none; } .kbf .stage { flex-basis: 100%; margin-bottom: 6px; } }
 </style>
 """

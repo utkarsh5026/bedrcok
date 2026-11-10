@@ -4,18 +4,68 @@ When a knowledge base syncs, it is *Bedrock* — not you — that reads your doc
 the embedding model and writes vectors. It does that by assuming this role, so the role
 needs exactly those three permissions and nothing more (plus the parsing model or Bedrock
 Data Automation, if the spec uses one to read documents).
+
+One more when the source bucket encrypts files with your own KMS key: reading a file then
+means asking KMS to decrypt it, so the role may use that one key, and only through S3.
 """
 
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 from botocore.exceptions import ClientError
 
-from ..aws import error_code
+from ..aws import Aws, error_code
 from ..spec import S3Source
 from .base import Action, Ctx, Inspection, Log, Step, claimed_by, is_ours, shared_name_conflict, tag_dict
+
+
+@dataclass
+class BucketKey:
+    """The customer-managed KMS key a bucket encrypts new files with.
+
+    ``key_id`` is how the bucket names it: a key id, key ARN, alias name or alias ARN. IAM
+    only honours a key's ARN in a policy, so ``arn`` is the key's ARN, or "" when it's an
+    alias kbforge couldn't look up (that takes ``kms:DescribeKey``).
+    """
+
+    key_id: str
+    arn: str = ""
+
+
+def bucket_kms_key(aws: Aws, bucket: str) -> Optional[BucketKey]:
+    """The customer-managed KMS key ``bucket`` encrypts with, or None if it uses AWS's own keys.
+
+    S3's default encryption and the AWS-managed ``aws/s3`` key need nothing extra: any role
+    allowed to read the bucket can read the files. Read-only, and never raises: a bucket
+    whose settings can't be read counts as None, because then there's nothing to act on.
+    """
+    try:
+        config = aws.client("s3").get_bucket_encryption(Bucket=bucket)["ServerSideEncryptionConfiguration"]
+    except ClientError:
+        return None  # no default encryption configured, or not allowed to look
+    key_id = ""
+    for rule in config.get("Rules", []):
+        default = rule.get("ApplyServerSideEncryptionByDefault", {})
+        if default.get("SSEAlgorithm", "").startswith("aws:kms"):
+            key_id = default.get("KMSMasterKeyID", "")
+            break
+    if not key_id or key_id.endswith("alias/aws/s3"):
+        return None
+    if key_id.startswith("arn:") and ":key/" in key_id:
+        return BucketKey(key_id, key_id)
+    if "alias/" not in key_id:
+        # A bare key id: a key in this account and region (the bucket must be in both).
+        return BucketKey(key_id, f"arn:aws:kms:{aws.region}:{aws.account_id}:key/{key_id}")
+    try:
+        metadata = aws.client("kms").describe_key(KeyId=key_id)["KeyMetadata"]
+    except ClientError:
+        return BucketKey(key_id)
+    if metadata.get("KeyManager") == "AWS":
+        return None
+    return BucketKey(key_id, metadata["Arn"])
 
 
 class RoleStep(Step):
@@ -34,7 +84,9 @@ class RoleStep(Step):
                 "Uses the role you supplied. It must trust bedrock.amazonaws.com and have the permissions shown below."
             )
         models = "the embedding model" if ctx.spec.parsing.strategy == "default" else "the embedding model and parser"
-        return f"The identity Bedrock assumes to read your documents, call {models} and write vectors."
+        key: Optional[BucketKey] = ctx.out.get("source_kms_key")
+        decrypt = ", decrypt them with your KMS key" if key is not None and key.arn else ""
+        return f"The identity Bedrock assumes to read your documents{decrypt}, call {models} and write vectors."
 
     def details(self, ctx: Ctx) -> Optional[Tuple[str, str]]:
         """The permissions policy as JSON, for the plan's fold-out."""
@@ -81,6 +133,18 @@ class RoleStep(Step):
                     "Condition": {"StringEquals": {"aws:ResourceAccount": acct}},
                 }
             )
+            key: Optional[BucketKey] = ctx.out.get("source_kms_key")
+            if key is not None and key.arn:
+                # Only through S3, so the role can decrypt your documents but can't use the key directly.
+                statements.append(
+                    {
+                        "Sid": "DecryptSourceDocuments",
+                        "Effect": "Allow",
+                        "Action": ["kms:Decrypt"],
+                        "Resource": [key.arn],
+                        "Condition": {"StringEquals": {"kms:ViaService": f"s3.{region}.amazonaws.com"}},
+                    }
+                )
         if spec.vector_store == "s3_vectors":
             statements.append(
                 {
@@ -144,27 +208,46 @@ class RoleStep(Step):
             ]
         return []
 
+    def find_source_key(self, ctx: Ctx) -> Optional[BucketKey]:
+        """Look up (once per run) the KMS key the source bucket encrypts with; ``permissions_policy`` uses it."""
+        if "source_kms_key" not in ctx.out:
+            source = ctx.spec.source
+            ctx.out["source_kms_key"] = bucket_kms_key(ctx.aws, source.bucket) if isinstance(source, S3Source) else None
+        return ctx.out["source_kms_key"]
+
+    def _key_warning(self, ctx: Ctx) -> str:
+        """A note when the bucket's KMS key is an alias kbforge couldn't look up, so the role can't be given it."""
+        key = self.find_source_key(ctx)
+        if key is None or key.arn:
+            return ""
+        return (
+            f"Your bucket encrypts files with KMS key {key.key_id}, but kbforge couldn't look it up "
+            "(kms:DescribeKey), so it can't let the role decrypt them and the sync would fail. Allow "
+            "kms:DescribeKey and plan again, or give the role kms:Decrypt on that key yourself."
+        )
+
     def inspect(self, ctx: Ctx) -> Inspection:
         """Use your role, or check ours exists, belongs to this knowledge base and has up-to-date permissions."""
+        warning = self._key_warning(ctx)
         if ctx.spec.role_arn:
             ctx.out["role_arn"] = ctx.spec.role_arn
-            return Inspection(Action.USE, "your role")
+            return Inspection(Action.USE, "your role", warning=warning)
         try:
             role = ctx.aws.client("iam").get_role(RoleName=ctx.names.role)["Role"]
         except ClientError as exc:
             if error_code(exc) == "NoSuchEntity":
-                return Inspection(Action.CREATE)
+                return Inspection(Action.CREATE, warning=warning)
             raise
         # Updating another knowledge base's role would swap its permissions for ours.
         owner = claimed_by(tag_dict(role.get("Tags", [])), ctx)
         if owner:
             return shared_name_conflict(owner, ctx)
         ctx.out["role_arn"] = role["Arn"]
-        if self._current_policy(ctx) == self.permissions_policy(ctx):
-            return Inspection(Action.EXISTS)
-        return Inspection(Action.UPDATE, "exists · permissions will be brought up to date")
+        if self.current_policy(ctx) == self.permissions_policy(ctx):
+            return Inspection(Action.EXISTS, warning=warning)
+        return Inspection(Action.UPDATE, "exists · permissions will be brought up to date", warning=warning)
 
-    def _current_policy(self, ctx: Ctx) -> Optional[Dict[str, Any]]:
+    def current_policy(self, ctx: Ctx) -> Optional[Dict[str, Any]]:
         """The role's kbforge policy as it is in AWS today, or None if it's missing."""
         try:
             doc = ctx.aws.client("iam").get_role_policy(RoleName=ctx.names.role, PolicyName=ctx.names.role_policy)

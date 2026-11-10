@@ -1,5 +1,7 @@
 """The wizard form: live validation, the describe → review → build flow, and escaping."""
 
+import importlib
+
 import pytest
 
 pytest.importorskip("ipywidgets")
@@ -7,6 +9,9 @@ pytest.importorskip("ipywidgets")
 import kbforge.knowledge_base  # noqa: E402
 from kbforge.ui import wizard_style  # noqa: E402
 from kbforge.wizard import Wizard  # noqa: E402
+
+#: The wizard's module. ``kbforge.wizard`` is the function that opens the form, so get the module itself.
+wizard_module = importlib.import_module("kbforge.wizard")
 
 
 @pytest.fixture
@@ -135,7 +140,7 @@ def test_parsing_model_choice_appears_only_for_foundation_model(wiz):
 
 
 def test_wizard_lists_the_parsers_the_account_offers(wiz, fake_aws, monkeypatch):
-    monkeypatch.setattr("kbforge.wizard.Aws", lambda region=None, session=None: fake_aws)
+    monkeypatch.setattr(wizard_module, "Aws", lambda region=None, session=None: fake_aws)
     fill(wiz)
     wiz.parsing.value = "foundation_model"
     wiz.parser.value = "nova-pro"
@@ -149,9 +154,17 @@ def test_wizard_lists_the_parsers_the_account_offers(wiz, fake_aws, monkeypatch)
 
 def test_wizard_parser_listing_failure_is_explained(wiz, fake_aws, monkeypatch):
     fake_aws.services["bedrock"].denied = True
-    monkeypatch.setattr("kbforge.wizard.Aws", lambda region=None, session=None: fake_aws)
+    monkeypatch.setattr(wizard_module, "Aws", lambda region=None, session=None: fake_aws)
     wiz.parsing.value = "foundation_model"
 
     wiz.parser_list_btn.click()
     assert "bedrock:ListFoundationModels" in wiz.parser_hint.value
     assert wiz.parser.value == "nova-lite"
+
+
+def test_wizard_can_be_opened_twice():
+    """Opening the form must not replace kbforge.wizard() with the module it lives in."""
+    import kbforge
+
+    first, second = kbforge.wizard(region="us-east-1"), kbforge.wizard(region="us-east-1")
+    assert first is not second and callable(kbforge.wizard)

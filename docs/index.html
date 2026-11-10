@@ -167,6 +167,23 @@ kb</code></pre>
       </div>
     </div>
 
+    <div class="row" id="sync">
+      <div class="text">
+        <div class="num">When documents change</div>
+        <h3>Sync, with the checks done first</h3>
+<pre><code>kb.check_sync()   <span class="c"># will a sync work? read-only</span>
+kb.sync()         <span class="c"># checks, then syncs with live progress</span>
+kb.syncs()        <span class="c"># how every recent sync went</span>
+kb.sync_panel()   <span class="c"># the same, with buttons</span></code></pre>
+        <p>A sync re-reads your documents; Bedrock only processes the new and changed ones. Before starting, kbforge checks what usually makes a sync fail an hour in: your permissions, the role Bedrock reads with (and the bucket's KMS key), the models and the files. If something would fail, nothing is started and you're told what to fix.</p>
+        <p>Afterwards you see what changed, and which files couldn't be indexed, why, and what to do about each. The panel follows a running sync by itself, so the notebook stays free.</p>
+      </div>
+      <div>
+        <figure class="shot tall"><a href="assets/screens/sync-panel.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/sync-panel-dark.png"><img src="assets/screens/sync-panel.png" alt="The sync panel: a header saying two files failed, the recent syncs as clickable cards, Check, Refresh, Stop and Sync now buttons, and the latest sync's counts and failed files with advice" loading="lazy" width="2524" height="2352"></picture></a><figcaption>The sync panel.</figcaption></figure>
+        <figure class="shot tall"><a href="assets/screens/sync-check.png"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/screens/sync-check-dark.png"><img src="assets/screens/sync-check.png" alt="Sync check card: credentials, knowledge base, data source, sync activity, your permissions, the knowledge base's role, the embedding model and the source documents" loading="lazy" width="2524" height="1710"></picture></a><figcaption>What <code>kb.check_sync()</code> looks at.</figcaption></figure>
+      </div>
+    </div>
+
     <div class="row" id="later">
       <div class="text">
         <div class="num">Afterwards</div>

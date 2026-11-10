@@ -7,10 +7,12 @@ Everything becomes ACTIVE/COMPLETE immediately, so tests never wait.
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 import itertools
 import json
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Set
 
 from botocore.exceptions import ClientError
 
@@ -48,6 +50,10 @@ class FakeIam:
     def __init__(self) -> None:
         self.roles: Dict[str, Dict[str, Any]] = {}
         self.policies: Dict[str, Dict[str, str]] = {}
+        #: True plays a notebook role without iam:SimulatePrincipalPolicy.
+        self.simulator_denied = False
+        #: Actions the notebook's own role isn't allowed, as the simulator reports them.
+        self.caller_denied: Set[str] = set()
 
     def get_role(self, RoleName: str) -> Dict[str, Any]:
         if RoleName not in self.roles:
@@ -94,10 +100,48 @@ class FakeIam:
             raise aws_error("DeleteConflict", "role still has policies")
         self.roles.pop(RoleName)
 
+    def simulate_principal_policy(
+        self, PolicySourceArn: str, ActionNames: List[str], ResourceArns: List[str], **_: Any
+    ) -> Dict[str, Any]:
+        """IAM's policy simulator. Roles in this fake are judged by their inline policies (conditions
+        are ignored); the notebook's own role isn't modelled, so it may do anything not in ``caller_denied``.
+        """
+        if self.simulator_denied:
+            raise aws_error("AccessDenied", "not authorized to perform: iam:SimulatePrincipalPolicy")
+        name = PolicySourceArn.rsplit("/", 1)[-1]
+        results = []
+        for action in ActionNames:
+            if name in self.roles:
+                allowed = any(
+                    self._allows(json.loads(doc), action, ResourceArns[0]) for doc in self.policies[name].values()
+                )
+            else:
+                allowed = action not in self.caller_denied
+            results.append({"EvalActionName": action, "EvalDecision": "allowed" if allowed else "implicitDeny"})
+        return {"EvaluationResults": results, "IsTruncated": False}
+
+    @staticmethod
+    def _allows(policy: Dict[str, Any], action: str, resource: str) -> bool:
+        for statement in policy.get("Statement", []):
+            actions = statement.get("Action", [])
+            resources = statement.get("Resource", [])
+            actions = [actions] if isinstance(actions, str) else actions
+            resources = [resources] if isinstance(resources, str) else resources
+            allows_action = statement.get("Effect") == "Allow" and any(fnmatch.fnmatch(action, a) for a in actions)
+            if allows_action and any(fnmatch.fnmatch(resource, r) for r in resources):
+                return True
+        return False
+
 
 class FakeS3:
     def __init__(self) -> None:
         self.buckets: Dict[str, Dict[str, int]] = {}
+        #: Default encryption per bucket; buckets not listed use S3's own keys (AES256), like new buckets in AWS.
+        self.encryption: Dict[str, Dict[str, str]] = {}
+
+    def get_bucket_encryption(self, Bucket: str) -> Dict[str, Any]:
+        default = self.encryption.get(Bucket, {"SSEAlgorithm": "AES256"})
+        return {"ServerSideEncryptionConfiguration": {"Rules": [{"ApplyServerSideEncryptionByDefault": default}]}}
 
     def get_bucket_location(self, Bucket: str) -> Dict[str, Any]:
         if Bucket not in self.buckets:
@@ -244,6 +288,15 @@ class FakeBedrockAgent:
         self.data_sources: Dict[str, Dict[str, Any]] = {}
         self.jobs: List[Dict[str, Any]] = []
         self.fail_create_kb: Optional[ClientError] = None
+        #: How the next syncs end, and their counts and failure reasons.
+        self.job_status = "COMPLETE"
+        self.job_statistics: Dict[str, int] = {"numberOfDocumentsScanned": 3, "numberOfNewDocumentsIndexed": 3}
+        self.job_failure_reasons: List[str] = []
+        #: How many times a new sync is looked at while IN_PROGRESS before it ends (0: ends at once).
+        self.job_polls = 0
+        #: Per-file results (``documentDetails`` entries), and whether listing them is denied.
+        self.documents: List[Dict[str, Any]] = []
+        self.documents_denied = False
 
     def get_paginator(self, name: str) -> _Paginator:
         if name == "list_knowledge_bases":
@@ -310,23 +363,62 @@ class FakeBedrockAgent:
     def delete_data_source(self, knowledgeBaseId: str, dataSourceId: str) -> None:
         del self.data_sources[dataSourceId]
 
-    def start_ingestion_job(self, knowledgeBaseId: str, dataSourceId: str) -> Dict[str, Any]:
+    def start_ingestion_job(self, knowledgeBaseId: str, dataSourceId: str, **kwargs: Any) -> Dict[str, Any]:
+        if any(j["dataSourceId"] == dataSourceId and j["status"] in ("STARTING", "IN_PROGRESS") for j in self.jobs):
+            raise aws_error("ConflictException", "There is already an ongoing ingestion job for this data source")
+        started = datetime.now(timezone.utc) - timedelta(seconds=90)
         job = {
             "ingestionJobId": new_id(),
             "knowledgeBaseId": knowledgeBaseId,
             "dataSourceId": dataSourceId,
-            "status": "COMPLETE",
-            "statistics": {"numberOfDocumentsScanned": 3, "numberOfNewDocumentsIndexed": 3},
+            "description": kwargs.get("description", ""),
+            "status": "IN_PROGRESS" if self.job_polls else self.job_status,
+            "statistics": dict(self.job_statistics),
+            "failureReasons": list(self.job_failure_reasons) if not self.job_polls else [],
+            "startedAt": started,
+            "updatedAt": started + timedelta(seconds=75),
+            "_polls_left": self.job_polls,
         }
         self.jobs.append(job)
-        return {"ingestionJob": job}
+        return {"ingestionJob": self._public(job)}
+
+    @staticmethod
+    def _public(job: Dict[str, Any]) -> Dict[str, Any]:
+        """A job as Bedrock returns it, without this fake's bookkeeping."""
+        return {k: v for k, v in job.items() if not k.startswith("_")}
 
     def get_ingestion_job(self, ingestionJobId: str, **_: Any) -> Dict[str, Any]:
-        return {"ingestionJob": next(j for j in self.jobs if j["ingestionJobId"] == ingestionJobId)}
+        job = next((j for j in self.jobs if j["ingestionJobId"] == ingestionJobId), None)
+        if job is None:
+            raise aws_error("ResourceNotFoundException", f"Ingestion job {ingestionJobId} not found")
+        if job["_polls_left"] > 0 and job["status"] == "IN_PROGRESS":
+            job["_polls_left"] -= 1
+            if job["_polls_left"] == 0:
+                job.update(status=self.job_status, failureReasons=list(self.job_failure_reasons))
+        return {"ingestionJob": self._public(job)}
 
-    def list_ingestion_jobs(self, knowledgeBaseId: str, dataSourceId: str, **_: Any) -> Dict[str, Any]:
-        mine = [j for j in self.jobs if j["dataSourceId"] == dataSourceId]
-        return {"ingestionJobSummaries": list(reversed(mine))[:1]}
+    def list_ingestion_jobs(
+        self, knowledgeBaseId: str, dataSourceId: str, maxResults: int = 1000, **_: Any
+    ) -> Dict[str, Any]:
+        mine = [j for j in reversed(self.jobs) if j["dataSourceId"] == dataSourceId]
+        # Like Bedrock, summaries leave out failureReasons.
+        summaries = [{k: v for k, v in self._public(j).items() if k != "failureReasons"} for j in mine[:maxResults]]
+        response: Dict[str, Any] = {"ingestionJobSummaries": summaries}
+        if len(mine) > maxResults:
+            response["nextToken"] = "more"
+        return response
+
+    def stop_ingestion_job(self, knowledgeBaseId: str, dataSourceId: str, ingestionJobId: str) -> Dict[str, Any]:
+        job = next(j for j in self.jobs if j["ingestionJobId"] == ingestionJobId)
+        if job["status"] not in ("STARTING", "IN_PROGRESS"):
+            raise aws_error("ConflictException", "The ingestion job is not in progress")
+        job.update(status="STOPPED", _polls_left=0)
+        return {"ingestionJob": self._public(job)}
+
+    def list_knowledge_base_documents(self, knowledgeBaseId: str, dataSourceId: str, **_: Any) -> Dict[str, Any]:
+        if self.documents_denied:
+            raise aws_error("AccessDeniedException", "not authorized to perform: bedrock:ListKnowledgeBaseDocuments")
+        return {"documentDetails": [d for d in self.documents if d["dataSourceId"] == dataSourceId]}
 
 
 class FakeOpenSearchServerless:
@@ -441,6 +533,25 @@ class FakeOpenSearch:
         return {index: {"mappings": self._indexes[index]["mappings"]}}
 
 
+class FakeKms:
+    """KMS, only as far as looking up the key behind an alias (what ``describe_key`` returns)."""
+
+    def __init__(self) -> None:
+        #: Alias name (``alias/...``) → the key's metadata.
+        self.aliases: Dict[str, Dict[str, str]] = {
+            "alias/aws/s3": {"Arn": f"arn:aws:kms:{REGION}:{ACCOUNT}:key/aws-managed-s3", "KeyManager": "AWS"}
+        }
+        self.denied = False
+
+    def describe_key(self, KeyId: str) -> Dict[str, Any]:
+        if self.denied:
+            raise aws_error("AccessDeniedException", "not authorized to perform: kms:DescribeKey")
+        name = KeyId.split(":", 5)[-1] if KeyId.startswith("arn:") else KeyId
+        if name not in self.aliases:
+            raise aws_error("NotFoundException", f"Alias {KeyId} is not found.")
+        return {"KeyMetadata": self.aliases[name]}
+
+
 class FakeAgentRuntime:
     def __init__(self) -> None:
         #: The last retrieve_and_generate request, so tests can check the model and settings sent.
@@ -507,6 +618,7 @@ class FakeAws:
             "bedrock-agent": FakeBedrockAgent(),
             "bedrock-agent-runtime": FakeAgentRuntime(),
             "opensearchserverless": FakeOpenSearchServerless(),
+            "kms": FakeKms(),
         }
         #: Who is "running the notebook". Tests change it to play a second teammate.
         self.principal = f"arn:aws:iam::{ACCOUNT}:role/SageMakerRole"

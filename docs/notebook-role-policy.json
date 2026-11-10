@@ -16,6 +16,8 @@
         "bedrock:StartIngestionJob",
         "bedrock:GetIngestionJob",
         "bedrock:ListIngestionJobs",
+        "bedrock:StopIngestionJob",
+        "bedrock:ListKnowledgeBaseDocuments",
         "bedrock:Retrieve",
         "bedrock:RetrieveAndGenerate",
         "bedrock:GetInferenceProfile",
@@ -30,7 +32,7 @@
     {
       "Sid": "ReadSourceBucket",
       "Effect": "Allow",
-      "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+      "Action": ["s3:ListBucket", "s3:GetBucketLocation", "s3:GetEncryptionConfiguration"],
       "Resource": "arn:aws:s3:::YOUR-DOCUMENTS-BUCKET"
     },
     {
@@ -73,6 +75,18 @@
         "iam:DeleteRole"
       ],
       "Resource": "arn:aws:iam::*:role/AmazonBedrockExecutionRoleForKnowledgeBase_kbf-*"
+    },
+    {
+      "Sid": "FindSourceBucketKey",
+      "Effect": "Allow",
+      "Action": "kms:DescribeKey",
+      "Resource": "*"
+    },
+    {
+      "Sid": "CheckPermissionsBeforeSyncing",
+      "Effect": "Allow",
+      "Action": "iam:SimulatePrincipalPolicy",
+      "Resource": "*"
     },
     {
       "Sid": "PassServiceRoleToBedrock",

@@ -9,26 +9,45 @@
 
 New here? Run ``kbforge.guide()`` in a notebook cell, or ``kbforge.wizard()`` for a form.
 Built one before? ``kbforge.knowledge_bases()`` lists them and ``KnowledgeBase.open(name)`` picks one up.
+Keeping one up to date? ``kbforge.sync_panel()`` checks, syncs and shows how every sync went.
 """
 
 from typing import Any, Optional
 
+# Loaded up front on purpose. Python sets ``kbforge.wizard`` to the submodule the first time it is
+# imported, so importing it lazily inside ``wizard()`` below would replace that function with the
+# module, and running ``kbforge.wizard()`` a second time would fail. (ipywidgets itself is still
+# only imported when the form is shown.)
+from . import wizard as _wizard_module
 from .deployed import KnowledgeBases
 from .guide import guide
+from .ingestion import IngestionJob, IngestionJobs
 from .knowledge_base import Answers, KBForgeError, KnowledgeBase, Status
 from .models import ANSWER_MODELS, EMBEDDING_MODELS, PARSING_MODELS
 from .parsers import ParsingModels
 from .plan import ApplyResult, Plan
 from .spec import Chunking, KBSpec, Parsing, S3Source, WebSource
+from .sync_check import SyncCheck
 
 __version__ = "0.1.0"
 
 
 def wizard(region: Optional[str] = None, session: Any = None) -> Any:
     """Show an interactive form that plans and builds a knowledge base (needs ipywidgets)."""
-    from .wizard import wizard as _wizard
+    return _wizard_module.wizard(region=region, session=session)
 
-    return _wizard(region=region, session=session)
+
+def sync_panel(name: Optional[str] = None, region: Optional[str] = None, session: Any = None) -> Any:
+    """Show buttons to check, sync and stop a knowledge base, with every recent sync (needs ipywidgets).
+
+    Pass the knowledge base's ``name``, or leave it out to pick from the ones kbforge built in
+    the region. Same as ``KnowledgeBase.open(name).sync_panel()``.
+    """
+    from .panel import SyncPanel, SyncPicker
+
+    if name is None:
+        return SyncPicker(region=region, session=session).widget
+    return SyncPanel(KnowledgeBase.open(name, region=region, session=session)).widget
 
 
 def parsing_models(region: Optional[str] = None, session: Any = None) -> ParsingModels:
@@ -69,6 +88,8 @@ __all__ = [
     "Answers",
     "ApplyResult",
     "Chunking",
+    "IngestionJob",
+    "IngestionJobs",
     "KBForgeError",
     "KBSpec",
     "KnowledgeBase",
@@ -78,10 +99,12 @@ __all__ = [
     "Plan",
     "S3Source",
     "Status",
+    "SyncCheck",
     "WebSource",
     "__version__",
     "guide",
     "knowledge_bases",
     "parsing_models",
+    "sync_panel",
     "wizard",
 ]
