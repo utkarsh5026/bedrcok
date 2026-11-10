@@ -77,6 +77,12 @@
       "Resource": "arn:aws:iam::*:role/AmazonBedrockExecutionRoleForKnowledgeBase_kbf-*"
     },
     {
+      "Sid": "FindSourceBucketKey",
+      "Effect": "Allow",
+      "Action": "kms:DescribeKey",
+      "Resource": "*"
+    },
+    {
       "Sid": "CheckPermissionsBeforeSyncing",
       "Effect": "Allow",
       "Action": "iam:SimulatePrincipalPolicy",

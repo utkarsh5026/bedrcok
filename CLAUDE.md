@@ -55,6 +55,7 @@ Different KB names can share AWS names (`HR_Policies` and `hr-policies` both slu
 
 - SageMaker runs as an assumed role; resource policies (the OpenSearch data access policy) need the real role ARN with its path. Use `Aws.principal_arn`.
 - The generated IAM role name starts with `AmazonBedrockExecutionRoleForKnowledgeBase_` because AWS's managed Bedrock policies only allow `iam:PassRole` on roles with that prefix. Don't rename it.
+- If the source bucket encrypts with a customer-managed KMS key, `RoleStep` gives the role `kms:Decrypt` on that key, only via S3 (`kms:ViaService`). IAM only honours key ARNs, so an alias is resolved with `kms:DescribeKey`; if that fails the plan warns instead of guessing. The AWS-managed `aws/s3` key needs nothing.
 - S3 Vectors indexes mark `AMAZON_BEDROCK_TEXT`/`AMAZON_BEDROCK_METADATA` as non-filterable; without this, large chunks hit the 2 KB filterable-metadata limit.
 - `retry_on` only retries when the error message hints at propagation (role/index not visible yet), so real permission errors fail fast.
 - In tests, `time.sleep` is patched out by an autouse fixture; the fake makes everything ACTIVE/COMPLETE immediately. For syncs, `FakeBedrockAgent.job_polls` keeps a new sync IN_PROGRESS for that many polls, and `job_status`/`job_statistics`/`documents` set how it ends; `FakeIam`'s simulator judges kbforge roles by their inline policy and the notebook role by `caller_denied`.

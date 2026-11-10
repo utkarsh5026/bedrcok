@@ -533,6 +533,25 @@ class FakeOpenSearch:
         return {index: {"mappings": self._indexes[index]["mappings"]}}
 
 
+class FakeKms:
+    """KMS, only as far as looking up the key behind an alias (what ``describe_key`` returns)."""
+
+    def __init__(self) -> None:
+        #: Alias name (``alias/...``) → the key's metadata.
+        self.aliases: Dict[str, Dict[str, str]] = {
+            "alias/aws/s3": {"Arn": f"arn:aws:kms:{REGION}:{ACCOUNT}:key/aws-managed-s3", "KeyManager": "AWS"}
+        }
+        self.denied = False
+
+    def describe_key(self, KeyId: str) -> Dict[str, Any]:
+        if self.denied:
+            raise aws_error("AccessDeniedException", "not authorized to perform: kms:DescribeKey")
+        name = KeyId.split(":", 5)[-1] if KeyId.startswith("arn:") else KeyId
+        if name not in self.aliases:
+            raise aws_error("NotFoundException", f"Alias {KeyId} is not found.")
+        return {"KeyMetadata": self.aliases[name]}
+
+
 class FakeAgentRuntime:
     def __init__(self) -> None:
         #: The last retrieve_and_generate request, so tests can check the model and settings sent.
@@ -599,6 +618,7 @@ class FakeAws:
             "bedrock-agent": FakeBedrockAgent(),
             "bedrock-agent-runtime": FakeAgentRuntime(),
             "opensearchserverless": FakeOpenSearchServerless(),
+            "kms": FakeKms(),
         }
         #: Who is "running the notebook". Tests change it to play a second teammate.
         self.principal = f"arn:aws:iam::{ACCOUNT}:role/SageMakerRole"

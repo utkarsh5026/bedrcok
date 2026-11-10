@@ -8,6 +8,7 @@ from kbforge import IngestionJob, IngestionJobs, KBForgeError, SyncCheck
 from kbforge.checks import FAIL, INFO, OK, WARN
 from kbforge.cli import main
 from kbforge.ingestion import document_advice, human_duration, job_advice, time_ago
+from kbforge.steps import Action
 
 from .fake_aws import ACCOUNT
 
@@ -133,21 +134,83 @@ def test_a_deleted_role_blocks_the_sync(built, fake_aws):
     assert "no longer exists" in check(report, "Knowledge base's role").detail
 
 
-def test_a_kms_key_the_role_cant_use_is_flagged(built, fake_aws):
-    fake_aws.services["s3"].encryption["my-company-docs"] = {"SSEAlgorithm": "aws:kms", "KMSMasterKeyID": KMS_KEY}
+def encrypt_bucket(fake_aws, key_id: str) -> None:
+    """Make the source bucket encrypt new files with ``key_id`` by default."""
+    fake_aws.services["s3"].encryption["my-company-docs"] = {"SSEAlgorithm": "aws:kms", "KMSMasterKeyID": key_id}
+
+
+def decrypt_statement(fake_aws):
+    """The role's KMS statement as kbforge wrote it, or None."""
+    policy = json.loads(fake_aws.services["iam"].policies[kbforge_role(fake_aws)]["kbforge-access"])
+    return next((s for s in policy["Statement"] if s["Sid"] == "DecryptSourceDocuments"), None)
+
+
+def role_item(plan):
+    return next(item for item in plan.items if item.step.title == "IAM service role")
+
+
+def test_the_role_kbforge_creates_may_decrypt_a_kms_encrypted_bucket(kb, fake_aws):
+    encrypt_bucket(fake_aws, KMS_KEY)
+
+    plan = kb.plan()
+    assert '"kms:Decrypt"' in role_item(plan).details[1]
+    assert "decrypt them with your KMS key" in role_item(plan).explain
+    kb.apply()
+
+    statement = decrypt_statement(fake_aws)
+    assert statement["Resource"] == [KMS_KEY]
+    assert statement["Condition"] == {"StringEquals": {"kms:ViaService": "s3.us-east-1.amazonaws.com"}}
+    assert check(kb.check_sync(), "Source encryption").status == OK
+
+
+def test_a_key_added_after_building_is_flagged_and_apply_grants_it(built, fake_aws):
+    encrypt_bucket(fake_aws, KMS_KEY)
 
     encryption = check(built.check_sync(), "Source encryption")
-    assert encryption.status == WARN and "kms:Decrypt" in encryption.detail
+    assert encryption.status == WARN and "Run kb.apply() to give it access" in encryption.detail
+    assert role_item(built.plan()).inspection.action == Action.UPDATE
 
-    iam = fake_aws.services["iam"]
-    iam.policies[kbforge_role(fake_aws)]["kms"] = json.dumps(
-        {"Statement": [{"Effect": "Allow", "Action": ["kms:Decrypt"], "Resource": [KMS_KEY]}]}
-    )
+    built.apply()
     assert check(built.check_sync(), "Source encryption").status == OK
+    assert role_item(built.plan()).inspection.action == Action.EXISTS
 
 
-def test_s3_managed_encryption_needs_no_check(built):
+@pytest.mark.parametrize(
+    ("key_id", "alias", "expected"),
+    [
+        ("1234abcd-5678", None, KMS_KEY),
+        ("alias/hr-docs", "alias/hr-docs", KMS_KEY),
+        (f"arn:aws:kms:us-east-1:{ACCOUNT}:alias/hr-docs", "alias/hr-docs", KMS_KEY),
+        ("alias/aws/s3", None, None),
+    ],
+)
+def test_every_way_a_bucket_names_its_key(kb, fake_aws, key_id, alias, expected):
+    if alias:
+        fake_aws.services["kms"].aliases[alias] = {"Arn": KMS_KEY, "KeyManager": "CUSTOMER"}
+    encrypt_bucket(fake_aws, key_id)
+
+    kb.apply()
+
+    statement = decrypt_statement(fake_aws)
+    assert (statement["Resource"] if statement else [None]) == [expected]
+
+
+def test_an_alias_that_cant_be_looked_up_is_explained_not_guessed(kb, fake_aws):
+    fake_aws.services["kms"].denied = True
+    encrypt_bucket(fake_aws, "alias/hr-docs")
+
+    plan = kb.plan()
+
+    assert plan.ready
+    assert "kms:DescribeKey" in role_item(plan).inspection.warning
+    kb.apply()
+    assert decrypt_statement(fake_aws) is None
+    assert check(kb.check_sync(), "Source encryption").status == INFO
+
+
+def test_s3_managed_encryption_needs_no_check(built, fake_aws):
     assert "Source encryption" not in [c.title for c in built.check_sync().checks]
+    assert decrypt_statement(fake_aws) is None
 
 
 def test_sync_reports_counts_and_failed_files_with_advice(built, fake_aws):

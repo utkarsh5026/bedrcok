@@ -50,7 +50,7 @@ from .permissions import ALLOWED, DENIED, UNKNOWN, simulate
 from .spec import KBSpec, S3Source
 from .steps.base import ACCESS_DENIED, Ctx
 from .steps.bedrock import KnowledgeBaseStep
-from .steps.iam import RoleStep
+from .steps.iam import RoleStep, bucket_kms_key
 
 #: What your notebook role needs for each part of syncing: (IAM action, what it lets you do, essential?).
 #: Without an essential one a sync can't be started or followed; the rest only switch features off.
@@ -153,7 +153,7 @@ def check_sync(spec: KBSpec, aws: Aws) -> SyncCheck:
     report.checks.append(_caller_check(aws, kb))
     report.checks.append(_role_check(live, aws, kb, ds))
     if isinstance(live.source, S3Source):
-        encryption = _encryption_check(live.source, aws, kb)
+        encryption = _encryption_check(live.source, aws, kb, live)
         if encryption:
             report.checks.append(encryption)
     report.checks.append(check_model(live, aws))
@@ -386,6 +386,7 @@ def _compare_with_kbforge_policy(
     ctx.out["index_arn"] = storage.get("s3VectorsConfiguration", {}).get("indexArn")
     ctx.out["collection_arn"] = storage.get("opensearchServerlessConfiguration", {}).get("collectionArn")
     step = RoleStep()
+    step.find_source_key(ctx)  # the expected policy includes the bucket's KMS key, if it has one
     try:
         current = step.current_policy(ctx)
     except ClientError as exc:
@@ -402,46 +403,40 @@ def _compare_with_kbforge_policy(
     )
 
 
-def _encryption_check(source: S3Source, aws: Aws, kb: Dict[str, Any]) -> Optional[Check]:
+def _encryption_check(source: S3Source, aws: Aws, kb: Dict[str, Any], live: KBSpec) -> Optional[Check]:
     """If the bucket encrypts files with your own KMS key, the knowledge base's role must be allowed to use it.
 
     This is the classic "every file failed" sync: the role can read the bucket but not decrypt
     what's in it. Silent when the bucket uses S3's own encryption, or its settings can't be read.
     """
-    try:
-        config = aws.client("s3").get_bucket_encryption(Bucket=source.bucket)["ServerSideEncryptionConfiguration"]
-    except ClientError:
-        return None  # no default encryption configured, or not allowed to look
-    key = ""
-    for rule in config.get("Rules", []):
-        default = rule.get("ApplyServerSideEncryptionByDefault", {})
-        if default.get("SSEAlgorithm", "").startswith("aws:kms"):
-            key = default.get("KMSMasterKeyID", "")
-            break
-    if not key or key.endswith("alias/aws/s3"):
-        return None  # S3's own key works for any role that may read the bucket
+    key = bucket_kms_key(aws, source.bucket)
+    if key is None:
+        return None
     title = "Source encryption"
     role_arn = kb.get("roleArn", "")
     name = role_arn.rsplit("/", 1)[-1]
-    key_arn = key if key.startswith("arn:") else f"arn:aws:kms:{aws.region}:{aws.account_id}:key/{key}"
-    short = key_arn.rsplit("/", 1)[-1]
+    short = (key.arn or key.key_id).rsplit("/", 1)[-1]
     verdict = UNKNOWN
-    if ":alias/" not in key_arn and not key.startswith("alias/"):
+    if key.arn:
         context = {"kms:ViaService": f"s3.{aws.region}.amazonaws.com"}
-        verdict = simulate(aws, role_arn, [("kms:Decrypt", key_arn)], context)[("kms:Decrypt", key_arn)]
+        verdict = simulate(aws, role_arn, [("kms:Decrypt", key.arn)], context)[("kms:Decrypt", key.arn)]
     if verdict == ALLOWED:
         return Check(OK, title, f"Files are encrypted with KMS key {short}, and the knowledge base's role may use it.")
     if verdict == DENIED:
+        fix = (
+            "Run kb.apply() to give it access."
+            if name == live.names.role
+            else "Add kms:Decrypt on this key to the role, or ask the key's owner to allow it."
+        )
         return Check(
             WARN,
             title,
             f"Files are encrypted with KMS key {short}, and {name} isn't allowed kms:Decrypt on it, so every file "
-            "would fail unless the key's own policy allows the role. Add kms:Decrypt on this key to the role, or "
-            "ask the key's owner to allow it.",
+            f"would fail unless the key's own policy allows the role. {fix}",
         )
     return Check(
         INFO,
         title,
-        f"Files are encrypted with KMS key {key}. The knowledge base's role ({name}) needs kms:Decrypt on it, or "
-        "every file fails to sync; kbforge couldn't check this in advance.",
+        f"Files are encrypted with KMS key {key.key_id}. The knowledge base's role ({name}) needs kms:Decrypt on "
+        "it, or every file fails to sync; kbforge couldn't check this in advance.",
     )
