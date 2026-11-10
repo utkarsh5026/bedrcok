@@ -160,11 +160,11 @@ class RoleStep(Step):
         if owner:
             return shared_name_conflict(owner, ctx)
         ctx.out["role_arn"] = role["Arn"]
-        if self._current_policy(ctx) == self.permissions_policy(ctx):
+        if self.current_policy(ctx) == self.permissions_policy(ctx):
             return Inspection(Action.EXISTS)
         return Inspection(Action.UPDATE, "exists · permissions will be brought up to date")
 
-    def _current_policy(self, ctx: Ctx) -> Optional[Dict[str, Any]]:
+    def current_policy(self, ctx: Ctx) -> Optional[Dict[str, Any]]:
         """The role's kbforge policy as it is in AWS today, or None if it's missing."""
         try:
             doc = ctx.aws.client("iam").get_role_policy(RoleName=ctx.names.role, PolicyName=ctx.names.role_policy)

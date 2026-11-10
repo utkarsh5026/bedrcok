@@ -57,9 +57,18 @@ class _Row:
 class Progress:
     """Tracks each step's state and redraws the progress view whenever something changes."""
 
-    def __init__(self, title: str, rows: List[Tuple[str, str]], kb_name: str):
+    def __init__(
+        self,
+        title: str,
+        rows: List[Tuple[str, str]],
+        kb_name: str,
+        retry: str = "kb.apply()",
+        retry_note: str = "Steps that already finished are detected and skipped.",
+    ):
         self.title = title
         self.kb_name = kb_name
+        #: The command to run again after a failure, and a sentence on why that's safe.
+        self.retry, self.retry_note = retry, retry_note
         self.rows = [_Row(t, r) for t, r in rows]
         self.started = time.time()
         self.finished = False
@@ -152,8 +161,8 @@ class Progress:
         footer = ""
         if self.failed:
             footer = (
-                '<div class="section next">Fix the problem above, then run <code>kb.apply()</code> again. '
-                "Steps that already finished are detected and skipped.</div>"
+                f'<div class="section next">Fix the problem above, then run <code>{esc(self.retry)}</code> again. '
+                f"{esc(self.retry_note)}</div>"
             )
         return card(
             f'<div class="head"><div class="eyebrow">kbforge · {esc(self.kb_name)}</div>'

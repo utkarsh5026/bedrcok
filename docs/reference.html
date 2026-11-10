@@ -118,7 +118,10 @@ kbforge plan kb.yaml              <span class="c"># checks + what would be built
 kbforge apply kb.yaml             <span class="c"># asks before changing anything (-y to skip)</span>
 kbforge ask kb.yaml "question"   <span class="c"># --answer for a written answer with citations</span>
 kbforge list                      <span class="c"># knowledge bases kbforge built in this region</span>
-kbforge sync kb.yaml
+kbforge check-sync kb.yaml        <span class="c"># would a sync work? read-only</span>
+kbforge sync kb.yaml              <span class="c"># checks first (--skip-checks), then waits (--no-wait)</span>
+kbforge syncs kb.yaml             <span class="c"># recent syncs; add "latest" or a job id for failed files</span>
+kbforge stop-sync kb.yaml
 kbforge status kb.yaml
 kbforge destroy kb.yaml
 kbforge models                    <span class="c"># supported embedding models</span>
@@ -126,7 +129,7 @@ kbforge parsers                   <span class="c"># models your account can use 
     <figure class="narrow">
       <a href="assets/screens/cli-plan.png"><img src="assets/screens/cli-plan.png" alt="Terminal output of kbforge plan: preflight checks with ticks and a colour-coded list of steps" loading="lazy" width="1760" height="1114"></a>
     </figure>
-    <p><code>kbforge plan</code> exits with code 2 when the plan is blocked, so CI can stop early.</p>
+    <p><code>kbforge plan</code> exits with code 2 when the plan is blocked, so CI can stop early. So do <code>kbforge check-sync</code> and <code>kbforge sync</code> when a sync would fail; <code>kbforge sync</code> exits with 1 if the sync itself failed or was stopped.</p>
 
     <h2 id="resources">What gets created</h2>
     <p class="sub">For a knowledge base named <code>hr-policies</code> using S3 Vectors:</p>
@@ -143,12 +146,14 @@ kbforge parsers                   <span class="c"># models your account can use 
     <p>With OpenSearch Serverless, the vector bucket and index are replaced by encryption and network policies, a collection, a data access policy (for the Bedrock role and you) and a k-NN index. Names are deterministic, so running the same definition twice finds the same resources and there's no state file to lose.</p>
 
     <h2 id="permissions">Permissions for your notebook role</h2>
-    <p>The SageMaker execution role (or whoever runs kbforge) needs the policy below. Replace <code>YOUR-DOCUMENTS-BUCKET</code>. The IAM statements are scoped to roles whose names start with <code>AmazonBedrockExecutionRoleForKnowledgeBase_kbf-</code>, so kbforge can't touch any other role.</p>
+    <p>The SageMaker execution role (or whoever runs kbforge) needs the policy below. Replace <code>YOUR-DOCUMENTS-BUCKET</code>. The IAM statements that create or change roles are scoped to roles whose names start with <code>AmazonBedrockExecutionRoleForKnowledgeBase_kbf-</code>, so kbforge can't touch any other role. (<code>iam:SimulatePrincipalPolicy</code> only reads policies, to check permissions before a sync.)</p>
     <details>
       <summary>Show the policy (<a href="notebook-role-policy.json" download>download JSON</a>)</summary>
       <pre><code id="policy">Loading…</code></pre>
     </details>
     <p>To list parsing models (<code>kbforge.parsing_models()</code>), also allow <code>bedrock:ListFoundationModels</code> and <code>bedrock:ListInferenceProfiles</code>; they're in the policy above. Without them you see kbforge's built-in list instead.</p>
+    <p>Syncing uses <code>bedrock:StartIngestionJob</code>, <code>bedrock:GetIngestionJob</code> and <code>bedrock:ListIngestionJobs</code>. <code>bedrock:StopIngestionJob</code> lets you stop one, and <code>bedrock:ListKnowledgeBaseDocuments</code> shows which files failed and why. All of them are in the policy above.</p>
+    <p>Before a sync, <code>kb.check_sync()</code> asks IAM's policy simulator whether you may start one and whether the knowledge base's role may read your documents, decrypt them with the bucket's KMS key, call the models and write vectors. That takes <code>iam:SimulatePrincipalPolicy</code>, and reading the bucket's encryption takes <code>s3:GetEncryptionConfiguration</code>; both are read-only and in the policy. Without them the check says what it couldn't verify and carries on.</p>
     <p><code>kb.ask(..., answer=True)</code> uses <code>bedrock:RetrieveAndGenerate</code> and calls the answer model with your own role, so that model needs to be enabled under Model access too. Both permissions are in the policy above.</p>
     <p>For OpenSearch Serverless also allow <code>aoss:CreateCollection</code>, <code>aoss:BatchGetCollection</code>, <code>aoss:DeleteCollection</code>, <code>aoss:CreateSecurityPolicy</code>, <code>aoss:GetSecurityPolicy</code>, <code>aoss:DeleteSecurityPolicy</code>, <code>aoss:CreateAccessPolicy</code>, <code>aoss:GetAccessPolicy</code>, <code>aoss:UpdateAccessPolicy</code>, <code>aoss:DeleteAccessPolicy</code>, <code>aoss:APIAccessAll</code> and <code>aoss:TagResource</code>.</p>
     <div class="callout"><b>IAM locked down?</b> Have an admin create a role that trusts <code>bedrock.amazonaws.com</code>, then pass <code>role_arn=</code>. The plan shows the exact permissions that role needs in the "IAM service role" fold-out, and you can drop the IAM statements above.</div>
@@ -173,12 +178,18 @@ kbforge parsers                   <span class="c"># models your account can use 
         <tr><td>Bedrock knowledge base: <span class="badge" style="--c:var(--red)">blocked</span></td><td>A KB with this name exists with a different model or vector store.</td><td>Pick a new name, or <code>destroy()</code> the old one.</td></tr>
         <tr><td>"Your notebook's role is missing a permission"</td><td>An AWS call was denied; the message names the action.</td><td>Add it (see <a href="#permissions">Permissions</a>), then <code>kb.apply()</code> again.</td></tr>
         <tr><td>"Bedrock can't see the new role/index yet — retrying"</td><td>Normal: new IAM roles take a few seconds to reach Bedrock.</td><td>Wait. kbforge retries for up to two minutes.</td></tr>
-        <tr><td>Sync finished with "N failed"</td><td>Some documents couldn't be parsed.</td><td>Check <code>kb.status()</code> and the ingestion job in the Bedrock console for per-file reasons.</td></tr>
+        <tr><td>Sync finished with "N failed"</td><td>Some documents couldn't be read: too large, an unsupported type, a bad <code>.metadata.json</code>, or a file the role can't decrypt.</td><td><code>kb.sync_job()</code> lists each failed file with Bedrock's reason and what to do. Fix or remove them, then <code>kb.sync()</code>.</td></tr>
+        <tr><td>Sync check ✕ "isn't allowed to start a sync"</td><td>Your role lacks <code>bedrock:StartIngestionJob</code> (or <code>GetIngestionJob</code>) on this knowledge base.</td><td>Ask your admin to add it (see <a href="#permissions">Permissions</a>). Nothing was started.</td></tr>
+        <tr><td>Knowledge base's role ⚠ "isn't allowed to read s3://…"</td><td>The role Bedrock reads with has lost a permission, so every file would fail.</td><td>For a role kbforge made, <code>kb.apply()</code> puts its permissions back. For your own role, add what the plan's "IAM service role" fold-out lists.</td></tr>
+        <tr><td>Source encryption ⚠ "isn't allowed kms:Decrypt"</td><td>The bucket encrypts files with your own KMS key and the knowledge base's role can't use it.</td><td>Allow the role <code>kms:Decrypt</code> on that key (in IAM, or in the key's policy).</td></tr>
+        <tr><td>Sync activity ⚠ "a sync … is still running"</td><td>Bedrock runs one sync at a time per data source.</td><td>Nothing: <code>kb.sync()</code> follows the running one. <code>kb.stop_sync()</code> stops it.</td></tr>
       </tbody>
     </table></div>
 
     <h2 id="faq">FAQ</h2>
     <details><summary>Does <code>plan()</code> cost anything or change anything?</summary><p>It changes nothing. The only billable call is one tiny embedding of the word "hello", which proves the model works for you (plus a one-token request to the parsing model, if you chose one). It costs a fraction of a cent.</p></details>
+    <details><summary>What does <code>kb.sync()</code> check before it starts, and does that cost anything?</summary><p>The same read-only checks as <code>kb.check_sync()</code>: your credentials, that the knowledge base and data source are ready, whether a sync is already running, your permissions, the knowledge base's role (it exists, trusts Bedrock, may read the source, its KMS key and the models, and write vectors), the models and the files in the source. The only billable calls are the same ones the plan makes: a one-word embedding, plus a one-token request to the parsing model if you chose one. Pass <code>check=False</code> to skip them.</p></details>
+    <details><summary>Can I keep working while a sync runs?</summary><p>Yes. <code>kb.sync(wait=False)</code> starts it and returns at once, and <code>kb.sync_panel()</code> follows a running sync in the background while the notebook stays free. The sync runs in AWS either way, so closing the notebook doesn't stop it; <code>kb.syncs()</code> shows how it's going later.</p></details>
     <details><summary>Can I adopt a knowledge base someone created by hand?</summary><p>If you use the same name, kbforge finds it and shows it as <span class="badge" style="--c:var(--muted)">exists</span>, or as <span class="badge" style="--c:var(--red)">blocked</span> if its settings differ. <code>destroy()</code> leaves it alone because it has no kbforge tag.</p></details>
     <details><summary>Where's the state file?</summary><p>There isn't one. Every resource name is derived from the knowledge base name, so kbforge always looks the resources up live in AWS. Two people running the same config file see the same plan.</p></details>
     <details><summary>Can my application query it without kbforge?</summary><p>Yes. It's a normal Bedrock knowledge base. Use <code>bedrock-agent-runtime</code>'s <code>retrieve</code> or <code>retrieve_and_generate</code> with the knowledge base ID from the "ready" card.</p></details>

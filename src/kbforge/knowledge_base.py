@@ -8,7 +8,8 @@ Typical notebook session::
     kb.plan()       # 1. look before you leap: checks + what will be created
     kb.apply()      # 2. build it, with live progress
     kb.ask("How many days of parental leave do we get?")   # 3. try it
-    kb.sync()       # later: re-ingest after documents change
+    kb.sync()       # later: re-ingest after documents change (checks first, then live progress)
+    kb.syncs()      # how every recent sync went; kb.sync_panel() for buttons
     kb.destroy()    # shows what would be deleted; destroy(confirm=True) deletes it
 """
 
@@ -25,14 +26,28 @@ from botocore.exceptions import BotoCoreError, ClientError
 from .aws import Aws
 from .deployed import Status, find_data_source, make_status, open_spec
 from .errors import KBForgeError, did_you_mean
+from .ingestion import (
+    RUNNING,
+    STATUS_STYLE,
+    IngestionJob,
+    IngestionJobs,
+    add_problems,
+    follow,
+    get_job,
+    list_jobs,
+    running_job,
+    start_job,
+    stop_job,
+)
 from .models import DEFAULT_ANSWER_MODEL, resolve_answer_model
 from .parsers import ParsingModels, list_parsing_models
 from .plan import ApplyResult, Plan, make_plan
 from .spec import Chunking, KBSpec, Parsing, Source
-from .steps import Ctx, describe_stats, explain_error, run_ingestion
+from .steps import Ctx, describe_stats, explain_error, latest_ingestion_job
 from .steps.bedrock import DataSourceStep, KnowledgeBaseStep
+from .sync_check import SyncCheck, check_sync
 
-__all__ = ["Answers", "KBForgeError", "KnowledgeBase", "Status"]
+__all__ = ["Answers", "IngestionJob", "IngestionJobs", "KBForgeError", "KnowledgeBase", "Status", "SyncCheck"]
 
 
 @dataclass
@@ -249,24 +264,170 @@ class KnowledgeBase:
             return plan
         return plan.apply()
 
-    def sync(self) -> Status:
-        """Re-ingest the data source (after documents were added, changed or removed)."""
+    def check_sync(self) -> SyncCheck:
+        """Check that a sync would work, without starting one: permissions, roles, the source and models.
+
+        Read-only and takes a few seconds. It looks at your own permissions to start and follow
+        syncs, the role Bedrock uses during a sync (can it read the bucket and its KMS key, call
+        the models, write vectors?), whether a sync is already running, and the files in the
+        source. ``kb.sync()`` runs it first anyway; call it on its own to look before syncing or
+        to find out why a sync failed.
+        """
+        with friendly_aws_errors():
+            return check_sync(self.spec, self.aws)
+
+    def sync(self, wait: bool = True, check: bool = True) -> Union[IngestionJob, SyncCheck]:
+        """Re-ingest the source after documents were added, changed or removed, with live progress.
+
+        It first runs ``check_sync()``: if something would make the sync fail, nothing is started
+        and the check card comes back instead, saying what to fix (``check=False`` skips this).
+        If a sync is already running, it follows that one rather than starting a second.
+
+        Returns the finished sync: what changed, and which files failed and why. With
+        ``wait=False`` it returns once the sync has started; it carries on in AWS, and
+        ``kb.syncs()`` shows how it's going.
+        """
         from .ui.progress import Progress
 
-        with friendly_aws_errors():
-            ctx = self._locate()
-        if not ctx.out.get("ds_id"):
-            raise KBForgeError(f"'{self.name}' hasn't been created yet. Run kb.plan() and kb.apply() first.")
-        progress = Progress(f"Syncing {self.name}", [("Ingestion", self.spec.source.describe())], self.name)
+        rows = [
+            ("Pre-sync checks", "permissions · roles · source · models"),
+            ("Sync (ingestion job)", self.spec.source.describe()),
+        ]
+        progress = Progress(f"Syncing {self.name}", rows, self.name, retry="kb.sync()", retry_note="")
+        row, followed = 0, False
         progress.start(0)
         try:
-            job = run_ingestion(self.aws, ctx.out["kb_id"], ctx.out["ds_id"], lambda msg: progress.log(0, msg))
-        except Exception as exc:
-            progress.fail(0, explain_error(exc))
+            if check:
+                report = check_sync(self.spec, self.aws)
+                if not report.ready:
+                    progress.fail(
+                        0,
+                        f"{len(report.blockers)} problem(s) would make the sync fail, so nothing was started. "
+                        "The card below says what to fix.",
+                    )
+                    return report
+                progress.done(0, report.summary)
+                kb_id, ds_id, source = report.kb_id, report.ds_id, report.source
+            else:
+                kb_id, ds_id = self._ids()
+                source = self.spec.source.describe()
+                progress.skip(0, "skipped (check=False)")
+            row = 1
+            progress.start(1)
+            started, followed = start_job(self.aws, kb_id, ds_id)
+            job_id = started["ingestionJobId"]
+            progress.log(
+                1,
+                f"Following the sync that was already running (job {job_id})" if followed else f"Started job {job_id}",
+            )
+            if not wait:
+                job = IngestionJob.from_api(started, self.name, self.aws.region, source)
+                job.followed = followed
+                progress.done(1, f"job {job_id} is running · kb.syncs() shows how it's going")
+                progress.close()
+                return job
+            final = follow(self.aws, kb_id, ds_id, job_id, lambda j: progress.log(1, _live_text(j)))
+        except KeyboardInterrupt:
+            if row == 0:
+                message = "Stopped before a sync was started, so nothing changed. Run kb.sync() again when ready."
+            else:
+                message = (
+                    "Stopped watching, but the sync carries on in AWS. kb.syncs() shows how it's going and "
+                    "kb.stop_sync() stops it."
+                )
+            progress.fail(row, message)
+            raise KBForgeError(message) from None
+        except KBForgeError as exc:
+            progress.fail(row, str(exc))
+            raise
+        except (ClientError, BotoCoreError) as exc:
+            progress.fail(row, explain_error(exc))
             raise KBForgeError(explain_error(exc)) from exc
-        progress.done(0, describe_stats(job.get("statistics", {})))
-        progress.close()
-        return self.status()
+
+        result = IngestionJob.from_api(final, self.name, self.aws.region, source)
+        result.followed = followed
+        if result.failed or result.skipped:
+            self._add_problems(result)
+        if result.status == "FAILED":
+            progress.fail(1, result.headline)
+        else:
+            progress.done(1, result.stats_text if result.status == "COMPLETE" else f"stopped · {result.stats_text}")
+            progress.close()
+        return result
+
+    def syncs(self, limit: int = 10) -> IngestionJobs:
+        """The recent syncs (Bedrock calls them ingestion jobs), newest first. Read-only.
+
+        Shows when each ran, how long it took, what it indexed and what failed. ``kb.sync_job()``
+        then shows one in detail.
+        """
+        with friendly_aws_errors():
+            kb_id, ds_id = self._ids()
+            return list_jobs(self.aws, self.name, kb_id, ds_id, self.spec.source.describe(), limit)
+
+    def sync_job(self, job_id: Optional[str] = None) -> IngestionJob:
+        """One sync in detail: the latest, or the one whose id you pass (ids are in ``kb.syncs()``).
+
+        For the latest sync it also lists the files Bedrock couldn't index, why, and what to do
+        about each. Read-only.
+        """
+        with friendly_aws_errors():
+            kb_id, ds_id = self._ids()
+            latest = latest_ingestion_job(self.aws, kb_id, ds_id)
+            if latest is None:
+                raise KBForgeError(f"'{self.name}' has never synced. Run kb.sync() to make its documents searchable.")
+            job = get_job(
+                self.aws, self.name, kb_id, ds_id, job_id or latest["ingestionJobId"], self.spec.source.describe()
+            )
+        if job.job_id == latest["ingestionJobId"] and not job.running:
+            self._add_problems(job)
+        elif job.failed:
+            job.problems_note = (
+                "Bedrock keeps each file's current state, not a history, so which files failed is only shown "
+                "for the latest sync."
+            )
+        return job
+
+    def stop_sync(self) -> IngestionJob:
+        """Stop the sync that's running.
+
+        Bedrock finishes the documents it's working on, then stops. Run ``kb.sync()`` later to
+        finish indexing.
+        """
+        with friendly_aws_errors():
+            kb_id, ds_id = self._ids()
+            running = running_job(self.aws, kb_id, ds_id)
+            if running is None:
+                raise KBForgeError(
+                    f"No sync is running for '{self.name}', so there's nothing to stop. "
+                    "kb.syncs() shows the recent ones."
+                )
+            stopped = stop_job(self.aws, kb_id, ds_id, running["ingestionJobId"])
+        return IngestionJob.from_api(stopped, self.name, self.aws.region, self.spec.source.describe())
+
+    def sync_panel(self) -> Any:
+        """Buttons for syncing, in a notebook: check, sync now, stop, and every recent sync in detail.
+
+        The panel follows a running sync by itself, so you can keep working in other cells.
+        Needs ipywidgets (installed with kbforge).
+        """
+        from .panel import SyncPanel
+
+        return SyncPanel(self).widget
+
+    def _ids(self) -> Tuple[str, str]:
+        """The knowledge base and data source ids, or a friendly error if they don't exist yet."""
+        ctx = self._locate()
+        if not ctx.out.get("ds_id"):
+            raise KBForgeError(f"'{self.name}' hasn't been created yet. Run kb.plan() and kb.apply() first.")
+        return ctx.out["kb_id"], ctx.out["ds_id"]
+
+    def _add_problems(self, job: IngestionJob) -> None:
+        """Attach the files Bedrock couldn't index to ``job``; a failed lookup becomes a note, not an error."""
+        try:
+            add_problems(self.aws, job)
+        except (ClientError, BotoCoreError) as exc:
+            job.problems_note = f"Couldn't list which files failed: {explain_error(exc)}"
 
     def ask(self, question: str, top_k: int = 5, answer: bool = False, model: Optional[str] = None) -> Answers:
         """Search the knowledge base for a question and show what comes back.
@@ -395,6 +556,14 @@ def friendly_aws_errors() -> Iterator[None]:
         yield
     except (ClientError, BotoCoreError) as exc:
         raise KBForgeError(explain_error(exc)) from exc
+
+
+def _live_text(job: Dict[str, Any]) -> str:
+    """A running sync in a few words for the progress view, e.g. ``syncing · 61 scanned · 58 indexed``."""
+    status = job.get("status", "")
+    label = STATUS_STYLE.get(status, (status.lower(), ""))[0]
+    stats = describe_stats(job.get("statistics") or {}) if status in RUNNING else ""
+    return f"{label} · {stats}" if stats else label
 
 
 def _unknown_options_message(unknown: Dict[str, Any]) -> str:

@@ -351,6 +351,8 @@ def describe_stats(stats: Dict[str, int]) -> str:
         parts.append(f"{stats['numberOfDocumentsDeleted']} removed")
     if stats.get("numberOfDocumentsFailed"):
         parts.append(f"{stats['numberOfDocumentsFailed']} failed")
+    if stats.get("numberOfDocumentsSkipped"):
+        parts.append(f"{stats['numberOfDocumentsSkipped']} skipped")
     return " · ".join(parts)
 
 

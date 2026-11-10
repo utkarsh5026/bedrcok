@@ -66,12 +66,27 @@ fake.services["s3"].buckets["my-company-docs"] = {{
     **{{f"hr/diagrams/org-{{i}}.png": 410_000 for i in range(3)}},
 }}
 agent = fake.services["bedrock-agent"]
-_start = agent.start_ingestion_job
+_start, _synced = agent.start_ingestion_job, set()
 def _realistic_job(**kw):
-    job = _start(**kw)["ingestionJob"]
-    job["statistics"] = {{"numberOfDocumentsScanned": 97, "numberOfNewDocumentsIndexed": 97}}
-    return {{"ingestionJob": job}}
+    # The first sync indexes everything; later ones pick up a few changes, and two files fail.
+    first = kw["dataSourceId"] not in _synced
+    _synced.add(kw["dataSourceId"])
+    agent.job_statistics = (
+        {{"numberOfDocumentsScanned": 97, "numberOfNewDocumentsIndexed": 97}} if first else
+        {{"numberOfDocumentsScanned": 99, "numberOfNewDocumentsIndexed": 2, "numberOfModifiedDocumentsIndexed": 3,
+         "numberOfDocumentsFailed": 2}}
+    )
+    return _start(**kw)
 agent.start_ingestion_job = _realistic_job
+_problems = [
+    ("hr/policies/benefits-2019-scan.pdf", "The file size (71.4 MB) exceeds the maximum supported size of 50 MB."),
+    ("hr/intranet/org-chart.vsdx", "Unsupported file format: .vsdx"),
+]
+agent.list_knowledge_base_documents = lambda **kw: {{"documentDetails": [
+    {{"dataSourceId": kw["dataSourceId"], "status": "FAILED", "statusReason": why,
+     "identifier": {{"dataSourceType": "S3", "s3": {{"uri": "s3://my-company-docs/" + key}}}}}}
+    for key, why in _problems
+]}}
 kbforge.knowledge_base.Aws = lambda region=None, session=None: fake
 kbforge.aws.Aws = lambda region=None, session=None: fake  # for kbforge.knowledge_bases()
 
@@ -128,6 +143,10 @@ CELLS = [
     ("answer", 'kb.ask("How many weeks of parental leave do we get?", answer=True)'),
     ("status", "kb.status()"),
     ("list", "kbforge.knowledge_bases()"),
+    ("sync-check", "kb.check_sync()   # will a sync work? Read-only"),
+    ("sync", "kb.sync()"),
+    ("syncs", "kb.syncs()"),
+    ("sync-panel", "kb.sync_panel()"),
     ("destroy", "kb.destroy()"),
     ("wizard", 'kbforge.wizard(region="us-east-1")'),
     # Last, because an error stops "Run All Cells": a mistyped name, as a colleague sees it.

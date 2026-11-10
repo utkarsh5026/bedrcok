@@ -10,16 +10,18 @@ import sys
 import textwrap
 from typing import TYPE_CHECKING, List
 
-from ..checks import FAIL, OK, WARN
+from ..checks import FAIL, INFO, OK, WARN
 from ..spec import VECTOR_STORES, KBSpec
 from ..steps import Action, describe_stats
 from .html import source_location
 
 if TYPE_CHECKING:
     from ..deployed import KnowledgeBases, Status
+    from ..ingestion import IngestionJob, IngestionJobs
     from ..knowledge_base import Answers
     from ..parsers import ParsingModels
     from ..plan import ApplyResult, Plan
+    from ..sync_check import SyncCheck
 
 _COLOURS = {"green": "32", "amber": "33", "red": "31", "blue": "34", "grey": "90", "bold": "1"}
 
@@ -36,7 +38,7 @@ ACTION_TEXT = {
     Action.KEEP: ("= keep  ", "amber"),
 }
 
-CHECK_TEXT = {OK: ("✓", "green"), WARN: ("!", "amber"), FAIL: ("✗", "red")}
+CHECK_TEXT = {OK: ("✓", "green"), INFO: ("i", "blue"), WARN: ("!", "amber"), FAIL: ("✗", "red")}
 
 
 def _use_colour() -> bool:
@@ -185,4 +187,93 @@ def render_parsing_models(models: ParsingModels) -> str:
     lines.append("")
     lines.append(paint("Use one in kb.yaml:", "grey"))
     lines.append(f"  parsing:\n    strategy: foundation_model\n    model: {models.values[0]}")
+    return "\n".join(lines)
+
+
+#: Terminal colours for the badge colour classes the HTML cards use.
+_CLASS_COLOUR = {"c-green": "green", "c-blue": "blue", "c-amber": "amber", "c-red": "red", "c-grey": "grey"}
+
+
+def render_ingestion_job(job: IngestionJob) -> str:
+    """One sync: outcome, what happened in a sentence, the counts, and the files that need attention."""
+    label, colour = job.outcome
+    lines = [
+        paint(f"\nSync of '{job.kb_name}': ", "bold") + paint(label, _CLASS_COLOUR.get(colour, "grey")),
+        paint(f"  job {job.job_id} · {job.timing}", "grey"),
+        _wrap(job.headline, 2),
+    ]
+    if job.followed:
+        lines.append(paint("  (A sync was already running, so kbforge followed it rather than start another.)", "grey"))
+    if job.status == "FAILED":
+        lines.append(paint("\n  Why it failed:", "red"))
+        lines += [_wrap(f"- {r}", 4) for r in job.failure_reasons or ["Bedrock didn't say why."]]
+        lines.append(_wrap(job.advice, 4))
+    if job.scanned or job.status == "COMPLETE":
+        counts = [("looked at", job.scanned), ("new", job.new), ("changed", job.updated), ("unchanged", job.unchanged)]
+        counts += [("removed", job.deleted), ("failed", job.failed)]
+        if job.skipped:
+            counts.append(("skipped", job.skipped))
+        lines.append("\n  " + " · ".join(f"{n:,} {label}" for label, n in counts))
+    if job.problems:
+        lines.append(paint(f"\n  Files that need attention ({len(job.problems):,}):", "bold"))
+        for problem in job.problems[:50]:
+            lines.append(f"  {paint(problem.label, _CLASS_COLOUR.get(problem.colour, 'amber'))}  {problem.uri}")
+            if problem.reason:
+                lines.append(paint(_wrap(problem.reason, 6), "grey"))
+            if problem.advice:
+                lines.append(_wrap(f"→ {problem.advice}", 6))
+        if len(job.problems) > 50:
+            lines.append(f"  …and {len(job.problems) - 50:,} more.")
+    elif job.problems is not None and not job.problems_note:
+        lines.append(paint("  Every file Bedrock found is indexed.", "green"))
+    if job.problems_note:
+        lines.append(paint(_wrap(job.problems_note, 2), "amber"))
+    return "\n".join(lines)
+
+
+def render_ingestion_jobs(jobs: IngestionJobs) -> str:
+    """Recent syncs, newest first, one per line."""
+    from ..ingestion import human_duration, time_ago
+
+    lines = [paint(f"\nRecent syncs of '{jobs.kb_name}' ({jobs.region}): {len(jobs)}", "bold")]
+    if not jobs.items:
+        lines.append("  Never synced. Run `kbforge sync` to make the documents searchable.")
+        return "\n".join(lines)
+    for job in jobs:
+        label, colour = job.outcome
+        took = f"running {human_duration(job.seconds)}" if job.running else f"took {human_duration(job.seconds)}"
+        lines.append(
+            f"  {time_ago(job.started_at):<14} {paint(label.ljust(17), _CLASS_COLOUR.get(colour, 'grey'))} "
+            f"{took:<20} {job.stats_text}  {paint(job.job_id, 'grey')}"
+        )
+        if job.status == "FAILED" and job.failure_reasons:
+            lines.append(paint(_wrap(job.failure_reasons[0], 17), "red"))
+    if jobs.more:
+        lines.append(paint("  Older syncs aren't shown (use --limit).", "grey"))
+    return "\n".join(lines)
+
+
+def render_sync_check(report: SyncCheck) -> str:
+    """The pre-sync checks, then whether a sync would work."""
+    lines = [
+        paint(f"\nSync check for '{report.kb_name}'", "bold"),
+        paint(f"  {report.region} · {report.source}", "grey"),
+    ]
+    lines.append("")
+    for check in report.checks:
+        glyph, colour = CHECK_TEXT[check.status]
+        lines.append(f"  {paint(glyph, colour)} {check.title}")
+        lines.append(_wrap(check.detail, 4))
+    lines.append("")
+    if report.blockers:
+        lines.append(paint("Blocked — a sync would fail. Nothing was started. Fix these, then check again:", "red"))
+        lines += [_wrap(f"- {b}", 2) for b in report.blockers]
+    elif report.running:
+        lines.append(
+            paint("A sync is already running: `kbforge sync` follows it, `kbforge stop-sync` stops it.", "blue")
+        )
+    elif report.warnings:
+        lines.append(paint("Ready, with warnings: a sync can start, but some files may fail.", "amber"))
+    else:
+        lines.append(paint("Ready to sync. Nothing has been started.", "green"))
     return "\n".join(lines)
